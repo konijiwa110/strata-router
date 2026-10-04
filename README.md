@@ -2,7 +2,7 @@
 
 中文 | [English](README.en.md)
 
-多台 [Strata](https://github.com/Niko1221/Strata) 机器的统一入口与管理控制台。客户端（Claude Code、OpenAI 兼容客户端等）只需把地址换成入口，请求会按规则分到各节点；接口与 Strata 相同（`/v1/messages`、`/v1/chat/completions`、`/v1/models` 等）。另外支持 OpenAI Responses 接口 `/v1/responses`，由入口转换成 Chat Completions 发给节点。
+多台 [Strata](https://github.com/Niko1221/Strata) 机器的统一入口与管理控制台。客户端（Claude Code、OpenAI 兼容客户端等）只需把地址换成入口，请求会按规则分到各节点；接口与 Strata 相同（`/v1/messages`、`/v1/chat/completions`、`/v1/models` 等）。OpenAI Responses 接口 `/v1/responses` 直接转发给节点（需要 Strata 0.1.39 及以上）。
 
 ## 功能
 
@@ -59,7 +59,7 @@ cd backend && python3 -m unittest discover tests -v
 ## 目录结构
 
 ```
-backend/strata_router/   后端（入口与转发、节点与路由、存储、管理接口、Responses 转换）
+backend/strata_router/   后端（入口与转发、节点与路由、存储、管理接口）
 backend/tests/           后端测试
 web/                     控制台前端
 deploy/                  systemd 服务模板

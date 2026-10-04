@@ -11,7 +11,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
-from . import admin, responses
+from . import admin
 from .core import Cluster, hash_password, now
 from .store import Store
 
@@ -75,6 +75,18 @@ def session_key(path, req):
     return _digest(head)[0]
 
 
+def responses_view(req):
+    """Responses 请求的 instructions + input 整理成 Chat 形式，只用于会话识别、固定前缀估算和预览。"""
+    msgs = [{"role": "system", "content": req["instructions"]}] if req.get("instructions") else []
+    items = req.get("input")
+    for it in [{"role": "user", "content": items}] if isinstance(items, str) else items or []:
+        if isinstance(it, dict) and it.get("role"):
+            msgs.append({**it, "role": "system" if it["role"] == "developer" else it["role"]})
+        elif isinstance(it, dict):                                 # function_call 等非消息条目
+            msgs.append(it)
+    return {"messages": msgs, "tools": req.get("tools")}
+
+
 def preview(req):
     """最后一条用户消息的文字摘要，便于在请求日志里辨认。"""
     for m in reversed(req.get("messages") or []):
@@ -82,7 +94,7 @@ def preview(req):
             continue
         c = m.get("content")
         if isinstance(c, list):
-            c = " ".join(p.get("text", "") for p in c if isinstance(p, dict) and p.get("type") == "text")
+            c = " ".join(p.get("text", "") for p in c if isinstance(p, dict) and p.get("type") in ("text", "input_text"))
         text = " ".join(REMINDER.sub(" ", str(c or "")).split())
         if text:
             return text[:160]
@@ -90,14 +102,18 @@ def preview(req):
 
 
 def read_usage(obj, out):
-    """从 OpenAI / Anthropic 响应对象（或流式事件）里取用量，写入 out。"""
-    u = obj.get("usage") or (obj.get("message") or {}).get("usage")
+    """从 OpenAI / Anthropic / Responses 响应对象（或流式事件）里取用量，写入 out。"""
+    u = obj.get("usage") or (obj.get("message") or {}).get("usage") or (obj.get("response") or {}).get("usage")
     if not isinstance(u, dict):
         return
     if "prompt_tokens" in u:                                      # OpenAI
         out["prompt_tokens"] = u.get("prompt_tokens")
         out["cached_tokens"] = (u.get("prompt_tokens_details") or {}).get("cached_tokens") or 0
         out["output_tokens"] = u.get("completion_tokens")
+    elif "input_tokens_details" in u:                             # Responses：input 含命中部分
+        out["prompt_tokens"] = u.get("input_tokens")
+        out["cached_tokens"] = (u.get("input_tokens_details") or {}).get("cached_tokens") or 0
+        out["output_tokens"] = u.get("output_tokens")
     elif "input_tokens" in u:                                     # Anthropic：input 为未命中部分
         cached = u.get("cache_read_input_tokens") or 0
         out["prompt_tokens"] = (u.get("input_tokens") or 0) + cached
@@ -106,7 +122,7 @@ def read_usage(obj, out):
 
 
 REMINDER = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
-FIRST_TOKEN = re.compile(rb'"content_block_delta"|"(?:reasoning_)?content":\s*"[^"]')   # 空内容（节点第一块）不算首字
+FIRST_TOKEN = re.compile(rb'"content_block_delta"|"(?:reasoning_)?content":\s*"[^"]|"delta":\s*"[^"]')   # 空内容（节点第一块）不算首字
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -187,25 +203,21 @@ class Handler(BaseHTTPRequestHandler):
 
     def generate(self, path, body, key):
         app, c = self.app, self.app.cluster
-        rreq = None
-        if path == "/v1/responses":                                # 转成 Chat 再发给节点，结果再转回来
-            try:
-                rreq = json.loads(body or b"{}")
-                body = json.dumps(responses.to_chat(rreq), ensure_ascii=False).encode()
-            except (ValueError, AttributeError, TypeError) as e:
-                return self._send(400, {"error": {"type": "invalid_request_error", "message": f"bad request: {e}"}})
         try:
-            req = json.loads(body or b"{}")
-            sess = session_key(path, req)
-            fixed, fixed_est = fixed_part(path, req)
-        except (ValueError, AttributeError):
-            req, sess, fixed, fixed_est = {}, None, None, 0
+            req = view = json.loads(body or b"{}")
+            vpath = path
+            if path == "/v1/responses":                            # 节点原生支持，原样转发；识别会话时按 Chat 形式看
+                view, vpath = responses_view(req), "/v1/chat/completions"
+            sess = session_key(vpath, view)
+            fixed, fixed_est = fixed_part(vpath, view)
+        except (ValueError, AttributeError, TypeError):
+            req, view, sess, fixed, fixed_est = {}, {}, None, None, 0
         if not isinstance(req, dict):
-            req = {}
+            req = view = {}
         est = len(body) // 3                                       # 粗估 token 数（JSON 字节数 / 3）
         rec = {"ts": now(), "key_id": key["id"], "key_name": key["name"], "api": GEN_PATHS[path], "path": path,
                "model": req.get("model"), "stream": int(bool(req.get("stream"))), "session": (sess or "")[:12],
-               "est_tokens": est, "fixed_tokens": fixed_est, "outcome": "running", "preview": preview(req)}
+               "est_tokens": est, "fixed_tokens": fixed_est, "outcome": "running", "preview": preview(view)}
         rid = app.store.add_request(rec)
         c.refresh_for_request()
         tried, t0 = [], time.time()
@@ -221,7 +233,7 @@ class Handler(BaseHTTPRequestHandler):
             log(f"POST {path} -> {b.name} [{why}] sess={(sess or '-')[:8]} ~{est}tok(固定~{fixed_est})")
             out = {}
             try:
-                status = self.forward_responses(b, body, rreq, out, t0) if rreq else self.forward(b, body, out, t0)
+                status = self.forward(b, body, out, t0)
                 break
             except ConnectionError as e:                           # 还没回给客户端任何内容
                 b.up = False
@@ -299,79 +311,6 @@ class Handler(BaseHTTPRequestHandler):
                     if resp.status >= 400:
                         out["error"] = b"".join(keep)[:500].decode("utf-8", "replace")
             return resp.status
-        finally:
-            conn.close()
-
-    def forward_responses(self, b, body, rreq, out, t0):
-        """Responses 请求：把转好的 Chat 请求发给节点，结果转成 Responses 格式回给客户端，用量等写入 out。"""
-        conn = b.connect(timeout=None)
-        try:
-            try:
-                conn.request("POST", "/v1/chat/completions", body=body, headers={
-                    "Content-Type": "application/json", "Authorization": f"Bearer {b.key}",
-                    "Content-Length": str(len(body))})
-                resp = conn.getresponse()
-            except OSError as e:
-                raise ConnectionError(str(e)) from e
-            if resp.status >= 400 or "event-stream" not in (resp.getheader("Content-Type") or ""):
-                data = resp.read()
-                try:
-                    obj = json.loads(data)
-                except ValueError:
-                    obj = None
-                if resp.status >= 400 or not isinstance(obj, dict):
-                    msg = str((obj.get("error") or {}).get("message") or obj) if isinstance(obj, dict) else \
-                        data[:500].decode("utf-8", "replace")
-                    out["error"] = msg[:500]
-                    self._send(resp.status if resp.status >= 400 else 502,
-                               {"error": {"type": "server_error", "message": msg}})
-                    return resp.status if resp.status >= 400 else 502
-                read_usage(obj, out)
-                out["ttft_ms"] = int((time.time() - t0) * 1000)
-                self._send(200, responses.from_chat(obj, rreq))
-                return 200
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("Transfer-Encoding", "chunked")
-            self.end_headers()
-            st, tail = responses.Stream(rreq), b""
-
-            def emit(events):
-                data = "".join(f"event: {e['type']}\ndata: {json.dumps(e, ensure_ascii=False)}\n\n" for e in events)
-                if data:
-                    data = data.encode()
-                    self.wfile.write(b"%x\r\n%s\r\n" % (len(data), data))
-
-            try:
-                emit(st.start())
-                while True:
-                    chunk = resp.read1(65536)
-                    if not chunk:
-                        break
-                    lines = (tail + chunk).split(b"\n")
-                    tail = lines.pop()
-                    for ln in lines:
-                        if not ln.startswith(b"data: ") or ln[6:].strip() == b"[DONE]":
-                            continue
-                        try:
-                            obj = json.loads(ln[6:])
-                        except ValueError:
-                            continue
-                        read_usage(obj, out)
-                        events = st.feed(obj)
-                        if "ttft_ms" not in out and any(e["type"].endswith(".delta") for e in events):
-                            out["ttft_ms"] = int((time.time() - t0) * 1000)
-                        emit(events)
-                emit(st.finish())
-                self.wfile.write(b"0\r\n\r\n")
-            except OSError:                                          # 客户端断开：关掉到节点的连接，让 Strata 停止生成
-                self.close_connection = True
-                out["outcome"] = "client_closed"
-            if st.resp["status"] == "failed":
-                out["error"] = str(st.resp["error"]["message"])[:500]
-                out["outcome"] = "error"
-            return 200
         finally:
             conn.close()
 

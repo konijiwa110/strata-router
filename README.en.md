@@ -2,7 +2,7 @@
 
 [中文](README.md) | English
 
-A single entry point and admin console for several machines running [Strata](https://github.com/Niko1221/Strata). Point your clients (Claude Code, OpenAI-compatible clients, etc.) at the router and requests are spread across the nodes. The API is the same as Strata's (`/v1/messages`, `/v1/chat/completions`, `/v1/models`, ...). The OpenAI Responses API (`/v1/responses`) is also supported: the router converts it to Chat Completions for the nodes.
+A single entry point and admin console for several machines running [Strata](https://github.com/Niko1221/Strata). Point your clients (Claude Code, OpenAI-compatible clients, etc.) at the router and requests are spread across the nodes. The API is the same as Strata's (`/v1/messages`, `/v1/chat/completions`, `/v1/models`, ...). The OpenAI Responses API (`/v1/responses`) is passed straight through to the nodes (requires Strata 0.1.39 or later).
 
 ## Features
 
@@ -51,7 +51,7 @@ Tests run against simulated Strata nodes; no real machines needed.
 ## Layout
 
 ```
-backend/strata_router/   backend (entry and forwarding, nodes and routing, storage, admin API, Responses conversion)
+backend/strata_router/   backend (entry and forwarding, nodes and routing, storage, admin API)
 backend/tests/           backend tests
 web/                     console frontend
 deploy/                  systemd service template
