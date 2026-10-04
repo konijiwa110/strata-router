@@ -509,11 +509,13 @@ class I18nTest(Base):
         db = sqlite3.connect(path)
         db.execute("CREATE TABLE events(id INTEGER PRIMARY KEY, ts REAL, type TEXT, node_id TEXT, node_name TEXT, message TEXT)")
         db.execute("INSERT INTO events(ts, type, message) VALUES(1, 'x', '旧事件')")
+        db.execute("INSERT INTO events(ts, type, message) VALUES(2, 'node_down', '节点离线：timed out')")
         db.commit()
         db.close()
         s = Store(path)
         s.add_event("y", message="新", message_en="new")
-        self.assertEqual([(e["message"], e["message_en"]) for e in s.events()], [("新", "new"), ("旧事件", None)])
+        self.assertEqual([(e["message"], e["message_en"]) for e in s.events()],
+                         [("新", "new"), ("节点离线：timed out", "Node offline: timed out"), ("旧事件", None)])
 
     def test_reading_progress_in_summary(self):
         self.stop.set()                                     # 停掉健康检查，免得它覆盖下面手动设置的状态

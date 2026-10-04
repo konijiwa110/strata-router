@@ -1,5 +1,6 @@
 """SQLite 存储：请求日志、事件、管理员登录会话。"""
 import json
+import re
 import sqlite3
 import threading
 import time
@@ -30,6 +31,32 @@ def day_start(t=None):
     return time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, 0, 0, 0, 0, 0, -1))
 
 
+# 旧事件（加英文列之前写入的）按已知格式补英文；认不出的保持为空，界面显示中文
+EVENT_EN = [(re.compile(p), en) for p, en in (
+    (r"^节点(?:恢复在线|上线)$", "Node back online"),
+    (r"^节点离线：(.*)$", r"Node offline: \1"),
+    (r"^转发失败：(.*)$", r"Forwarding failed: \1"),
+    (r"^启用$", "Enabled"), (r"^排空$", "Draining"), (r"^停用$", "Disabled"),
+    (r"^添加节点 (.*)$", r"Added node \1"),
+    (r"^删除节点 (.*)$", r"Removed node \1"),
+    (r"^修改节点设置$", "Node settings changed"),
+    (r"^新建访问密钥 (.*)$", r"Created access key \1"),
+    (r"^启用访问密钥 (.*)$", r"Enabled access key \1"),
+    (r"^停用访问密钥 (.*)$", r"Disabled access key \1"),
+    (r"^删除访问密钥 (.*)$", r"Removed access key \1"),
+    (r"^修改设置$", "Settings changed"),
+    (r"^修改管理员密码$", "Admin password changed"),
+    (r"^清理 (\d+) 天前的日志 (\d+) 条$", r"Deleted \2 log records older than \1 days"),
+)]
+
+
+def event_en(message):
+    for p, en in EVENT_EN:
+        if p.match(message or ""):
+            return p.sub(en, message)
+    return None
+
+
 class Store:
     def __init__(self, path):
         self.db = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
@@ -40,6 +67,12 @@ class Store:
             self.db.executescript(SCHEMA)
             if "message_en" not in [r[1] for r in self.db.execute("PRAGMA table_info(events)")]:   # 旧库补列
                 self.db.execute("ALTER TABLE events ADD COLUMN message_en TEXT")
+            rows = self.db.execute("SELECT id, message FROM events WHERE message_en IS NULL").fetchall()
+            fill = [(event_en(msg), rid) for rid, msg in rows if event_en(msg)]
+            if fill:                                         # 一个事务里写完，避免逐条提交拖慢启动
+                self.db.execute("BEGIN")
+                self.db.executemany("UPDATE events SET message_en=? WHERE id=?", fill)
+                self.db.execute("COMMIT")
 
     def q(self, sql, args=()):
         with self.lock:

@@ -169,4 +169,9 @@
     .tabular {
         font-variant-numeric: tabular-nums;
     }
+    /* 可点击元素显示手型（Tailwind v4 默认按钮为箭头） */
+    button:not(:disabled), [role="button"]:not([aria-disabled="true"]), [role="tab"], [role="menuitem"], [role="option"],
+    [role="switch"], [role="combobox"], a[href], label[for], summary {
+        cursor: pointer;
+    }
 }
