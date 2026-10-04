@@ -1,0 +1,172 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* 视觉沿用 Strata 网页（serve/web/tokens.css）。Outfit 字体：SIL OFL 1.1，见 assets/fonts/OFL.txt */
+@font-face {
+    font-family: "Outfit";
+    src: url("./assets/fonts/outfit-latin-wght.woff2") format("woff2-variations");
+    font-weight: 100 900;
+    font-display: swap;
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: "Outfit";
+    src: url("./assets/fonts/outfit-latin-ext-wght.woff2") format("woff2-variations");
+    font-weight: 100 900;
+    font-display: swap;
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-sans: "Outfit", system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --font-heading: var(--font-sans);
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, "Liberation Mono", monospace;
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    /* Strata 语义色 */
+    --color-surface: var(--st-surface);
+    --color-surface-2: var(--st-surface-2);
+    --color-line: var(--st-line);
+    --color-line-soft: var(--st-line-soft);
+    --color-ink: var(--st-ink);
+    --color-ink-soft: var(--st-ink-soft);
+    --color-ink-muted: var(--st-ink-muted);
+    --color-brand: var(--st-accent);
+    --color-brand-hover: var(--st-accent-hover);
+    --color-brand-tint: var(--st-accent-tint);
+    --color-brand-text: var(--st-accent-text);
+    --color-info: var(--st-info);
+    --color-info-tint: var(--st-info-tint);
+    --color-info-text: var(--st-info-text);
+    --color-warn: var(--st-warn);
+    --color-warn-tint: var(--st-warn-tint);
+    --color-warn-text: var(--st-warn-text);
+    --color-danger: var(--st-danger);
+    --color-danger-tint: var(--st-danger-tint);
+    --color-danger-text: var(--st-danger-text);
+    --color-focus: var(--st-focus);
+    --shadow-card: var(--st-sh-card);
+    --shadow-bar: var(--st-sh-bar);
+    --shadow-pop: var(--st-sh-pop);
+    --radius-sm: 8px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 20px;
+    --radius-2xl: 24px;
+}
+
+:root {
+    --st-bg: #f9fafb;
+    --st-surface: #ffffff;
+    --st-surface-2: #f7f7f7;
+    --st-line: #dee5ee;
+    --st-line-soft: #eeeeee;
+    --st-ink: #221e1f;
+    --st-ink-soft: #303030;
+    --st-ink-muted: #6f6f6f;
+    --st-accent: #10b981;
+    --st-accent-hover: #0c8a60;
+    --st-accent-ink: #ffffff;
+    --st-accent-tint: #ecfdf5;
+    --st-accent-text: #0c8a60;
+    --st-focus: #405de6;
+    --st-info: #0f97ff;
+    --st-info-tint: #e8f4ff;
+    --st-info-text: #0668c2;
+    --st-warn: #e39b0b;
+    --st-warn-tint: #fff6e0;
+    --st-warn-text: #8a5a00;
+    --st-danger: #e0283f;
+    --st-danger-tint: #fdecee;
+    --st-danger-text: #b01a2e;
+    --st-sh-card: 0 18px 7px rgba(0,0,0,.01), 0 10px 6px rgba(0,0,0,.02), 0 4px 4px rgba(0,0,0,.03), 0 1px 2px rgba(0,0,0,.04);
+    --st-sh-bar: 0 54px 21px rgba(0,0,0,.01), 0 30px 18px rgba(0,0,0,.03), 0 13px 13px rgba(0,0,0,.05), 0 3px 7px rgba(0,0,0,.06);
+    --st-sh-pop: 0 10px 40px rgba(15,23,42,.08), 0 1px 3px rgba(15,23,42,.06);
+
+    --background: var(--st-bg);
+    --foreground: var(--st-ink);
+    --card: var(--st-surface);
+    --card-foreground: var(--st-ink);
+    --popover: var(--st-surface);
+    --popover-foreground: var(--st-ink);
+    --primary: var(--st-accent);
+    --primary-foreground: var(--st-accent-ink);
+    --secondary: var(--st-surface-2);
+    --secondary-foreground: var(--st-ink);
+    --muted: var(--st-surface-2);
+    --muted-foreground: var(--st-ink-muted);
+    --accent: var(--st-surface-2);
+    --accent-foreground: var(--st-ink);
+    --destructive: var(--st-danger);
+    --border: var(--st-line);
+    --input: var(--st-line);
+    --ring: var(--st-focus);
+    --radius: 14px;
+    color-scheme: light;
+}
+
+.dark {
+    --st-bg: #0e1113;
+    --st-surface: #161a1d;
+    --st-surface-2: #1d2226;
+    --st-line: #2a3036;
+    --st-line-soft: #22272c;
+    --st-ink: #eef1f3;
+    --st-ink-soft: #c7cdd3;
+    --st-ink-muted: #8e979f;
+    --st-accent: #34d399;
+    --st-accent-hover: #4ade80;
+    --st-accent-ink: #052e20;
+    --st-accent-tint: rgba(52,211,153,.12);
+    --st-accent-text: #4ade80;
+    --st-focus: #7b93ff;
+    --st-info: #3aa9ff;
+    --st-info-tint: rgba(58,169,255,.12);
+    --st-info-text: #7cc4ff;
+    --st-warn: #f5b53d;
+    --st-warn-tint: rgba(245,181,61,.12);
+    --st-warn-text: #f8c96a;
+    --st-danger: #ff5a6e;
+    --st-danger-tint: rgba(255,90,110,.12);
+    --st-danger-text: #ff8a98;
+    --st-sh-card: 0 1px 2px rgba(0,0,0,.4);
+    --st-sh-bar: 0 12px 32px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.35);
+    --st-sh-pop: 0 16px 48px rgba(0,0,0,.55), 0 1px 3px rgba(0,0,0,.4);
+    color-scheme: dark;
+}
+
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+    html {
+        @apply font-sans antialiased;
+    }
+    body {
+        @apply bg-background text-foreground;
+        font-size: 15px;
+        line-height: 1.55;
+    }
+    .tabular {
+        font-variant-numeric: tabular-nums;
+    }
+}

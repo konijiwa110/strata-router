@@ -1,0 +1,14 @@
+# systemd 用户服务示例：复制为 ~/.config/systemd/user/strata-router.service，按实际路径修改后
+# systemctl --user daemon-reload && systemctl --user enable --now strata-router
+[Unit]
+Description=Strata 集群入口与管理控制台
+After=network-online.target
+
+[Service]
+WorkingDirectory=/opt/strata_router
+ExecStart=/usr/bin/python3 /opt/strata_router/router.py /opt/strata_router/config.json
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

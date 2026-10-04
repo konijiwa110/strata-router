@@ -1,0 +1,8 @@
+__pycache__/
+*.tmp
+web/node_modules/
+config.json
+config.json.tmp
+data.db*
+initial-admin-password.txt
+strata-router.service
