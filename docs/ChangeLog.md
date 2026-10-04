@@ -1,5 +1,9 @@
 # ChangeLog
 
+## 2026-10-04 仓库改名
+
+- GitHub 仓库由 strata_router 改名为 strata-router，README 标题同步修改。
+
 ## 2026-10-04 设置页布局
 
 - 去掉设置页的“外观”卡片（顶栏已有主题切换）。

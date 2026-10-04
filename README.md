@@ -1,4 +1,4 @@
-# strata_router
+# strata-router
 
 多台 [Strata](https://github.com/Niko1221/Strata) 机器的统一入口与管理控制台。客户端（Claude Code、OpenAI 兼容客户端等）只需把地址换成入口，请求会按规则分到各节点；接口与 Strata 相同（`/v1/messages`、`/v1/chat/completions`、`/v1/models` 等）。另外支持 OpenAI Responses 接口 `/v1/responses`，由入口转换成 Chat Completions 发给节点。
 
