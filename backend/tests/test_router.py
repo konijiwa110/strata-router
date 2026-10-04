@@ -1,4 +1,4 @@
-"""用本地模拟 Strata 测试集群入口：python3 -m unittest test_router -v"""
+"""用本地模拟 Strata 测试入口：在 backend 目录下运行 python3 -m unittest discover tests -v"""
 import http.client
 import json
 import os
@@ -9,9 +9,9 @@ import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import router
-from core import Cluster, hash_key, hash_password
-from store import Store
+from strata_router import router
+from strata_router.core import Cluster, hash_key, hash_password
+from strata_router.store import Store
 
 KEY, NODE_KEY, ADMIN_PW = "client-key-1", "node-key", "admin-pass-1"
 
@@ -487,3 +487,41 @@ class ResponsesTest(Base):
     def test_previous_response_id_rejected(self):
         code, _ = self.post({"model": "m", "input": "hi", "previous_response_id": "resp_x"})
         self.assertEqual(code, 400)
+
+
+class I18nTest(Base):
+    nodes = ("A",)
+
+    def test_admin_error_follows_lang(self):
+        self.assertEqual(self.http("POST", "/api/admin/login", {"password": "nope"})[1]["error"]["message"], "密码不正确")
+        code, res = self.http("POST", "/api/admin/login", {"password": "nope"}, {"X-Lang": "en"})
+        self.assertEqual((code, res["error"]["message"]), (401, "Wrong password"))
+
+    def test_event_stored_in_both_languages(self):
+        h = self.login()
+        self.http("POST", "/api/admin/keys", {"name": "ci"}, h)
+        e = self.store.events()[0]
+        self.assertEqual((e["type"], e["message"], e["message_en"]), ("key_added", "新建访问密钥 ci", "Created access key ci"))
+
+    def test_old_events_table_gets_column(self):
+        import sqlite3
+        path = os.path.join(self.dir, "old.db")
+        db = sqlite3.connect(path)
+        db.execute("CREATE TABLE events(id INTEGER PRIMARY KEY, ts REAL, type TEXT, node_id TEXT, node_name TEXT, message TEXT)")
+        db.execute("INSERT INTO events(ts, type, message) VALUES(1, 'x', '旧事件')")
+        db.commit()
+        db.close()
+        s = Store(path)
+        s.add_event("y", message="新", message_en="new")
+        self.assertEqual([(e["message"], e["message_en"]) for e in s.events()], [("新", "new"), ("旧事件", None)])
+
+    def test_reading_progress_in_summary(self):
+        self.stop.set()                                     # 停掉健康检查，免得它覆盖下面手动设置的状态
+        time.sleep(0.5)
+        b = self.cluster.backends[0]
+        b.busy, b.detail = True, {"phase": "reading the prompt"}
+        b.metrics = {"live": {"state": "reading", "prompt_read": 40, "prompt_total": 100}}
+        live = b.summary()["live"]
+        self.assertEqual((live["prompt_read"], live["prompt_total"]), (40, 100))
+        b.metrics = {"live": {"state": "generating", "prompt_read": None, "prompt_total": None}}
+        self.assertNotIn("prompt_read", b.summary()["live"])

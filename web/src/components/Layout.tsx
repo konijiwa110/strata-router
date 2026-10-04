@@ -5,20 +5,33 @@ import { Segmented } from "@/components/st"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { ThemePref } from "@/hooks/useTheme"
+import { getLang, setLang, t } from "@/lib/i18n"
 
 export type Page = "overview" | "nodes" | "requests" | "keys" | "settings"
 
+const P = (value: Page, icon: ReactNode, zh: string, en: string) => ({ value, get label() { return <>{icon}{t(zh, en)}</> } })
+
 export const PAGES: { value: Page; label: ReactNode }[] = [
-  { value: "overview", label: <><LayoutGrid />总览</> },
-  { value: "nodes", label: <><Server />节点</> },
-  { value: "requests", label: <><ListTree />请求</> },
-  { value: "keys", label: <><KeyRound />密钥</> },
-  { value: "settings", label: <><Settings />设置</> },
+  P("overview", <LayoutGrid />, "总览", "Overview"),
+  P("nodes", <Server />, "节点", "Nodes"),
+  P("requests", <ListTree />, "请求", "Requests"),
+  P("keys", <KeyRound />, "密钥", "Keys"),
+  P("settings", <Settings />, "设置", "Settings"),
 ]
 
 const NEXT_THEME: Record<ThemePref, ThemePref> = { light: "dark", dark: "system", system: "light" }
 const THEME_ICON = { light: <Sun />, dark: <Moon />, system: <SunMoon /> }
-const THEME_LABEL = { light: "浅色", dark: "深色", system: "跟随系统" }
+const THEME_LABEL = { light: ["浅色", "Light"], dark: ["深色", "Dark"], system: ["跟随系统", "System"] } as const
+
+/** 语言切换：显示要切换到的语言 */
+export function LangToggle() {
+  const next = getLang() === "zh" ? "en" : "zh"
+  return (
+    <Button variant="ghost" size="sm" className="px-2 text-[13px] font-semibold" onClick={() => setLang(next)} aria-label={t("切换语言", "Switch language")}>
+      {next === "en" ? "EN" : "中"}
+    </Button>
+  )
+}
 
 export function Layout({ page, onPage, status, theme, onTheme, onLogout, children }: {
   page: Page
@@ -42,17 +55,18 @@ export function Layout({ page, onPage, status, theme, onTheme, onLogout, childre
           </nav>
           <div className="flex-1" />
           {status}
+          <LangToggle />
           <Tooltip>
-            <TooltipTrigger render={<Button variant="ghost" size="icon" onClick={() => onTheme(NEXT_THEME[theme])} aria-label="切换主题" />}>
+            <TooltipTrigger render={<Button variant="ghost" size="icon" onClick={() => onTheme(NEXT_THEME[theme])} aria-label={t("切换主题", "Toggle theme")} />}>
               {THEME_ICON[theme]}
             </TooltipTrigger>
-            <TooltipContent>{THEME_LABEL[theme]}</TooltipContent>
+            <TooltipContent>{t(THEME_LABEL[theme][0], THEME_LABEL[theme][1])}</TooltipContent>
           </Tooltip>
           <Tooltip>
-            <TooltipTrigger render={<Button variant="ghost" size="icon" onClick={onLogout} aria-label="退出登录" />}>
+            <TooltipTrigger render={<Button variant="ghost" size="icon" onClick={onLogout} aria-label={t("退出登录", "Log out")} />}>
               <LogOut />
             </TooltipTrigger>
-            <TooltipContent>退出登录</TooltipContent>
+            <TooltipContent>{t("退出登录", "Log out")}</TooltipContent>
           </Tooltip>
         </div>
         <nav className="overflow-x-auto px-4 pb-3 md:hidden">

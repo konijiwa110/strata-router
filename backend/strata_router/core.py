@@ -1,4 +1,4 @@
-"""集群核心：节点、配置、访问密钥、路由决策、健康检查。"""
+"""核心：节点、配置、访问密钥、路由决策、健康检查。"""
 import hashlib
 import hmac
 import http.client
@@ -123,7 +123,7 @@ class Backend:
         try:
             st, s = http_json(self.host, self.port, "GET", "/status", self.key, timeout)
             if st != 200 or not isinstance(s, dict):
-                raise OSError("密钥不正确" if st == 401 else f"HTTP {st}")
+                raise OSError(f"HTTP {st}")
         except Exception as e:                       # noqa: BLE001 - 任何失败都算一次探测失败
             self.fails += 1
             self.last_error = str(e) or type(e).__name__
@@ -169,10 +169,13 @@ class Backend:
     def summary(self):
         hw = (self.metrics or {}).get("hardware") or {}
         hist = (self.metrics or {}).get("history") or {}
+        live, ml = dict(self.detail), (self.metrics or {}).get("live") or {}
+        if self.state() == "reading" and ml.get("state") == "reading" and ml.get("prompt_total"):
+            live["prompt_read"], live["prompt_total"] = ml.get("prompt_read"), ml["prompt_total"]   # 读取进度只在 /metrics 里有
         return {"id": self.id, "name": self.name, "url": self.url, "mode": self.mode, "weight": self.weight,
                 "tags": self.tags, "up": self.up, "state": self.state(), "busy": self.busy, "queued": self.queued,
                 "inflight": self.inflight, "served": self.served, "last_seen": self.last_seen,
-                "last_error": self.last_error, "info": self.info, "live": self.detail, "key_hint": mask(self.key),
+                "last_error": self.last_error, "info": self.info, "live": live, "key_hint": mask(self.key),
                 "hw": {k: hw.get(k) for k in ("gpu_util", "gpu_mem_used", "gpu_mem_total", "gpu_temp", "gpu_power",
                                               "cpu", "ram_used", "ram_total")},
                 "spark": {k: hist.get(k, [])[-30:] for k in ("tok_s", "gpu_util", "gpu_mem_used")}}
@@ -238,17 +241,19 @@ class Cluster:
         return None
 
     # ---- 健康检查 ----
-    def refresh(self, nodes=None, metrics=False):
+    def refresh(self, nodes=None, metrics=False, reading_metrics=False):
+        """metrics：所有在线节点拉一次 /metrics；reading_metrics：只给正在读取提示的节点拉，用于显示读取进度。"""
         nodes = list(self.backends) if nodes is None else nodes
         h = self.health
         changes = list(self.pool.map(lambda b: (b, b.poll_status(h["timeout_s"], h["fail_threshold"])), nodes))
         for b, ch in changes:
             if ch == "up":
-                self.on_event("node_up", b, "节点恢复在线")
+                self.on_event("node_up", b, ("节点恢复在线", "Node back online"))
             elif ch == "down":
-                self.on_event("node_down", b, f"节点离线：{b.last_error}")
-        if metrics:
-            list(self.pool.map(lambda b: b.poll_metrics(h["timeout_s"]), [b for b in nodes if b.up]))
+                self.on_event("node_down", b, (f"节点离线：{b.last_error}", f"Node offline: {b.last_error}"))
+        want = [b for b in nodes if b.up and (metrics or (reading_metrics and b.state() == "reading"))]
+        if want:
+            list(self.pool.map(lambda b: b.poll_metrics(h["timeout_s"]), want))
 
     def refresh_for_request(self):
         """请求到达时只快速刷新在线且参与分配的节点，避免离线节点拖慢请求。"""
@@ -260,7 +265,7 @@ class Cluster:
             t = now()
             want_metrics = t - last_metrics >= self.health["metrics_interval_s"]
             try:
-                self.refresh(metrics=want_metrics)
+                self.refresh(metrics=want_metrics, reading_metrics=True)
             except Exception as e:                   # noqa: BLE001 - 健康检查线程不能退出
                 print("health loop error:", e, flush=True)
             if want_metrics:

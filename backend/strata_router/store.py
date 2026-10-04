@@ -18,7 +18,8 @@ CREATE INDEX IF NOT EXISTS req_ts ON requests(ts);
 CREATE INDEX IF NOT EXISTS req_node ON requests(node_id, ts);
 CREATE INDEX IF NOT EXISTS req_key ON requests(key_id, ts);
 CREATE INDEX IF NOT EXISTS req_session ON requests(session);
-CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, ts REAL, type TEXT, node_id TEXT, node_name TEXT, message TEXT);
+CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, ts REAL, type TEXT, node_id TEXT, node_name TEXT, message TEXT,
+                                  message_en TEXT);
 CREATE INDEX IF NOT EXISTS ev_ts ON events(ts);
 CREATE TABLE IF NOT EXISTS admin_sessions(token_hash TEXT PRIMARY KEY, expires REAL);
 """
@@ -37,6 +38,8 @@ class Store:
         with self.lock:
             self.db.execute("PRAGMA journal_mode=WAL")
             self.db.executescript(SCHEMA)
+            if "message_en" not in [r[1] for r in self.db.execute("PRAGMA table_info(events)")]:   # 旧库补列
+                self.db.execute("ALTER TABLE events ADD COLUMN message_en TEXT")
 
     def q(self, sql, args=()):
         with self.lock:
@@ -116,9 +119,9 @@ class Store:
         return n
 
     # ---- 事件 ----
-    def add_event(self, typ, node_id=None, node_name=None, message=""):
-        self.x("INSERT INTO events(ts,type,node_id,node_name,message) VALUES(?,?,?,?,?)",
-               (time.time(), typ, node_id, node_name, message))
+    def add_event(self, typ, node_id=None, node_name=None, message="", message_en=None):
+        self.x("INSERT INTO events(ts,type,node_id,node_name,message,message_en) VALUES(?,?,?,?,?,?)",
+               (time.time(), typ, node_id, node_name, message, message_en))
 
     def events(self, limit=30):
         return self.q("SELECT * FROM events ORDER BY id DESC LIMIT ?", (limit,))

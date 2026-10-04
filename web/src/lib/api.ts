@@ -1,3 +1,5 @@
+import { getLang, t } from "./i18n"
+
 const TOKEN = "strata-cluster-token"
 
 export const session = {
@@ -22,11 +24,11 @@ export const setUnauthorizedHandler = (fn: () => void) => {
 export async function api<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
   const r = await fetch(`/api/admin/${path}`, {
     method: init?.method ?? "GET",
-    headers: { Authorization: `Bearer ${session.get()}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${session.get()}`, "Content-Type": "application/json", "X-Lang": getLang() },
     body: init?.body === undefined ? undefined : JSON.stringify(init.body),
   })
   const data = await r.json().catch(() => ({}))
   if (r.status === 401 && path !== "login") onUnauthorized()
-  if (!r.ok) throw new ApiError(data?.error?.message ?? `请求失败（${r.status}）`, r.status)
+  if (!r.ok) throw new ApiError(data?.error?.message ?? t(`请求失败（${r.status}）`, `Request failed (${r.status})`), r.status)
   return data as T
 }

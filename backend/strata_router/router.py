@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""Strata 集群入口：生成请求优先发到空闲节点，同一会话尽量回到原节点以保住对话缓存；附带管理控制台。只用标准库。"""
+"""Strata Router 入口：生成请求优先发到空闲节点，同一会话尽量回到原节点以保住对话缓存；附带管理控制台。只用标准库。"""
 import hashlib
 import json
 import re
@@ -12,16 +11,15 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
-import admin
-import responses
-from core import Cluster, hash_password, now
-from store import Store
+from . import admin, responses
+from .core import Cluster, hash_password, now
+from .store import Store
 
 GEN_PATHS = {"/v1/chat/completions": "openai", "/v1/messages": "anthropic", "/v1/responses": "responses"}
 SKIP_HEADERS = {"connection", "keep-alive", "transfer-encoding", "te", "trailer", "upgrade", "proxy-authorization",
                 "proxy-connection", "host", "content-length", "authorization", "x-api-key"}
-HERE = os.path.dirname(os.path.abspath(__file__))
-WEB_DIR = os.path.join(HERE, "web", "dist")
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # 仓库根目录
+WEB_DIR = os.path.join(ROOT, "web", "dist")
 
 
 class App:
@@ -30,7 +28,9 @@ class App:
         cluster.on_event = self.event
 
     def event(self, typ, node, message):
-        self.store.add_event(typ, node.id if node else None, node.name if node else None, message)
+        """message 为 (中文, 英文)，或只有中文的字符串。"""
+        zh, en = message if isinstance(message, tuple) else (message, None)
+        self.store.add_event(typ, node.id if node else None, node.name if node else None, zh, en)
 
 
 # ---- 请求解析 ----
@@ -161,9 +161,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(req, dict):
                     raise ValueError
             except ValueError:
-                return self._send(400, {"error": {"message": "请求体需要是 JSON 对象"}})
+                return self._send(400, {"error": {"message": admin.pick(("请求体需要是 JSON 对象", "Body must be a JSON object"),
+                                                                       self.headers.get("X-Lang"))}})
             code, res = admin.handle(app, self.command, path[len("/api/admin/"):], parse_qs(u.query), req,
-                                     self._bearer())
+                                     self._bearer(), self.headers.get("X-Lang"))
             return self._send(code, res)
         key = None
         if self.command != "OPTIONS" and (path.startswith("/v1/") or path == "/status"):
@@ -225,7 +226,7 @@ class Handler(BaseHTTPRequestHandler):
             except ConnectionError as e:                           # 还没回给客户端任何内容
                 b.up = False
                 tried.append(b.id)
-                app.event("node_down", b, f"转发失败：{e}")
+                app.event("node_down", b, (f"转发失败：{e}", f"Forwarding failed: {e}"))
                 if not c.routing["retry"]:
                     status, out = 502, {"error": str(e)[:500]}
                     self._send(502, {"error": {"type": "server_error", "message": f"node {b.name} unreachable"}})
@@ -433,7 +434,7 @@ def start(cluster, store, host, port):
 
 
 def main():
-    path = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "config.json"))
+    path = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "config.json"))
     cluster = Cluster(path)
     cluster.save()                                                   # 旧格式配置迁移后写回
     ensure_admin(cluster)
@@ -442,6 +443,3 @@ def main():
     log(f"strata-router on {cluster.cfg['listen']}:{cluster.cfg['port']}, nodes={[b.name for b in cluster.backends]}")
     threading.Event().wait()
 
-
-if __name__ == "__main__":
-    main()

@@ -8,6 +8,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { usePoll } from "@/hooks/usePoll"
 import { useTheme } from "@/hooks/useTheme"
 import { api, session, setUnauthorizedHandler } from "@/lib/api"
+import { t, useLang } from "@/lib/i18n"
 import type { NodeSummary } from "@/lib/types"
 import Keys from "@/pages/Keys"
 import Login from "@/pages/Login"
@@ -29,13 +30,14 @@ function ClusterPill() {
   const tone = online < data.length ? "danger" : working ? "brand" : "muted"
   return (
     <Pill tone={tone} pulse={working > 0} className="hidden h-[30px] px-3 text-[13px] sm:inline-flex">
-      {online}/{data.length} 在线{working ? ` · ${working} 工作中` : ""}
+      {online}/{data.length} {t("在线", "online")}{working ? ` · ${working} ${t("工作中", "working")}` : ""}
     </Pill>
   )
 }
 
 export default function App() {
   const { pref, setPref, resolved } = useTheme()
+  useLang()                                          // 切换语言时整页重新渲染
   const [authed, setAuthed] = useState(() => Boolean(session.get()))
   const [page, setPage] = useState<Page>(readPage)
 

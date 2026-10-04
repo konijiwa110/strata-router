@@ -9,15 +9,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { usePoll } from "@/hooks/usePoll"
 import { api } from "@/lib/api"
 import { OUTCOME, REASON, dateTime, ms, num, pct, tokens } from "@/lib/format"
+import { t } from "@/lib/i18n"
 import type { AccessKey, NodeSummary, RequestDetail, RequestRow } from "@/lib/types"
 
 const PAGE = 50
-const RANGES = [
-  { value: "1", label: "1 小时" },
-  { value: "24", label: "24 小时" },
-  { value: "168", label: "7 天" },
-  { value: "720", label: "30 天" },
-]
+const R = (value: string, zh: string, en: string) => ({ value, get label() { return t(zh, en) } })
+const RANGES = [R("1", "1 小时", "1 h"), R("24", "24 小时", "24 h"), R("168", "7 天", "7 d"), R("720", "30 天", "30 d")]
 
 function OutcomePill({ outcome }: { outcome: string }) {
   const o = OUTCOME[outcome]
@@ -31,16 +28,16 @@ function Detail({ id, onClose }: { id: number | null; onClose: () => void }) {
       <SheetContent side="right" className="w-full overflow-y-auto bg-background p-0 data-[side=right]:sm:max-w-[640px]">
         <SheetHeader className="sticky top-0 z-10 border-b border-line bg-surface px-6 py-4">
           <SheetTitle className="flex items-center gap-2.5 text-lg font-black">
-            请求 #{id}
+            {t("请求", "Request")} #{id}
             {r && <OutcomePill outcome={r.outcome} />}
           </SheetTitle>
-          {r && <div className="text-xs text-ink-muted">{dateTime(r.ts)} · {{ openai: "OpenAI", anthropic: "Anthropic", responses: "Responses" }[r.api]} · {r.stream ? "流式" : "非流式"}</div>}
+          {r && <div className="text-xs text-ink-muted">{dateTime(r.ts)} · {{ openai: "OpenAI", anthropic: "Anthropic", responses: "Responses" }[r.api]} · {r.stream ? t("流式", "Streaming") : t("非流式", "Non-streaming")}</div>}
         </SheetHeader>
         {r && (
           <div className="space-y-5 p-6">
             {r.preview && (
               <StCard>
-                <CardTitle>内容</CardTitle>
+                <CardTitle>{t("内容", "Content")}</CardTitle>
                 <p className="text-sm leading-relaxed text-ink-soft">{r.preview}</p>
               </StCard>
             )}
@@ -48,38 +45,38 @@ function Detail({ id, onClose }: { id: number | null; onClose: () => void }) {
               <div className="rounded-[14px] bg-danger-tint p-4 text-sm text-danger-text">{r.error}</div>
             )}
             <StCard>
-              <CardTitle>概况</CardTitle>
+              <CardTitle>{t("概况", "Summary")}</CardTitle>
               <div className="grid gap-x-8 sm:grid-cols-2">
-                <KV label="节点" value={r.node_name ?? "—"} />
-                <KV label="路由" value={REASON[r.reason ?? ""] ?? r.reason ?? "—"} />
-                <KV label="密钥" value={r.key_name} />
-                <KV label="模型" value={r.model ?? "—"} />
-                <KV label="提示" value={num(r.prompt_tokens)} />
-                <KV label="缓存命中" value={r.prompt_tokens ? `${num(r.cached_tokens)}（${pct((r.cached_tokens ?? 0) / r.prompt_tokens)}）` : "—"} />
-                <KV label="输出" value={num(r.output_tokens)} />
-                <KV label="首字" value={ms(r.ttft_ms)} />
-                <KV label="耗时" value={ms(r.duration_ms)} />
-                <KV label="状态码" value={r.status ?? "—"} />
-                <KV label="会话" value={r.session || "—"} mono />
-                <KV label="估算" value={`${tokens(r.est_tokens)}（固定 ${tokens(r.fixed_tokens)}）`} />
+                <KV label={t("节点", "Node")} value={r.node_name ?? "—"} />
+                <KV label={t("路由", "Route")} value={REASON[r.reason ?? ""] ?? r.reason ?? "—"} />
+                <KV label={t("密钥", "Key")} value={r.key_name} />
+                <KV label={t("模型", "Model")} value={r.model ?? "—"} />
+                <KV label={t("提示", "Prompt")} value={num(r.prompt_tokens)} />
+                <KV label={t("缓存命中", "Cache hit")} value={r.prompt_tokens ? t(`${num(r.cached_tokens)}（${pct((r.cached_tokens ?? 0) / r.prompt_tokens)}）`, `${num(r.cached_tokens)} (${pct((r.cached_tokens ?? 0) / r.prompt_tokens)})`) : "—"} />
+                <KV label={t("输出", "Output")} value={num(r.output_tokens)} />
+                <KV label={t("首字", "TTFT")} value={ms(r.ttft_ms)} />
+                <KV label={t("耗时", "Duration")} value={ms(r.duration_ms)} />
+                <KV label={t("状态码", "Status code")} value={r.status ?? "—"} />
+                <KV label={t("会话", "Session")} value={r.session || "—"} mono />
+                <KV label={t("估算", "Estimate")} value={t(`${tokens(r.est_tokens)}（固定 ${tokens(r.fixed_tokens)}）`, `${tokens(r.est_tokens)} (fixed ${tokens(r.fixed_tokens)})`)} />
               </div>
             </StCard>
             <StCard>
-              <CardTitle>路由决策</CardTitle>
-              <StTable head={[{ label: "节点" }, { label: "当时状态" }, { label: "在途", num: true }, { label: "排队", num: true }, { label: "换入重读", num: true }, { label: "" }]}>
+              <CardTitle>{t("路由决策", "Routing decision")}</CardTitle>
+              <StTable head={[{ label: t("节点", "Node") }, { label: t("当时状态", "State then") }, { label: t("在途", "In flight"), num: true }, { label: t("排队", "Queued"), num: true }, { label: t("换入重读", "Re-read cost"), num: true }, { label: "" }]}>
                 {r.decision.map((d) => (
                   <tr key={d.id}>
                     <td className="font-medium text-ink">{d.name}</td>
                     <td>
                       <StatePill state={!d.up ? "offline" : d.busy || d.inflight ? "generating" : d.queued ? "queued" : "idle"} />
-                      {d.mode !== "enabled" && <span className="ml-1.5 text-xs text-ink-muted">{d.mode === "draining" ? "排空中" : "已停用"}</span>}
+                      {d.mode !== "enabled" && <span className="ml-1.5 text-xs text-ink-muted">{d.mode === "draining" ? t("排空中", "Draining") : t("已停用", "Disabled")}</span>}
                     </td>
                     <td className="text-right">{d.inflight}</td>
                     <td className="text-right">{d.queued}</td>
                     <td className="text-right">{tokens(d.cost)}</td>
                     <td className="space-x-1 text-right whitespace-nowrap">
-                      {d.home && <Pill tone="info">原节点</Pill>}
-                      {d.id === r.node_id && <Pill tone="brand">选中</Pill>}
+                      {d.home && <Pill tone="info">{t("原节点", "Home")}</Pill>}
+                      {d.id === r.node_id && <Pill tone="brand">{t("选中", "Chosen")}</Pill>}
                     </td>
                   </tr>
                 ))}
@@ -115,13 +112,13 @@ export default function Requests() {
 
   return (
     <div>
-      <PageHeader title="请求">{data && <Pill tone="muted">{num(data.total)} 条</Pill>}</PageHeader>
+      <PageHeader title={t("请求", "Requests")}>{data && <Pill tone="muted">{t(`${num(data.total)} 条`, `${num(data.total)} total`)}</Pill>}</PageHeader>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Segmented options={RANGES} value={hours} onChange={reset(setHours)} size="sm" />
-        <Choice value={node} onChange={reset(setNode)} options={[{ value: "all", label: "全部节点" }, ...(nodes ?? []).map((n) => ({ value: n.id, label: n.name }))]} />
-        <Choice value={key} onChange={reset(setKey)} options={[{ value: "all", label: "全部密钥" }, ...(keys ?? []).map((k) => ({ value: k.id, label: k.name }))]} />
-        <Choice value={outcome} onChange={reset(setOutcome)} options={[{ value: "all", label: "全部状态" }, ...Object.entries(OUTCOME).map(([v, o]) => ({ value: v, label: o.label }))]} />
+        <Choice value={node} onChange={reset(setNode)} options={[{ value: "all", label: t("全部节点", "All nodes") }, ...(nodes ?? []).map((n) => ({ value: n.id, label: n.name }))]} />
+        <Choice value={key} onChange={reset(setKey)} options={[{ value: "all", label: t("全部密钥", "All keys") }, ...(keys ?? []).map((k) => ({ value: k.id, label: k.name }))]} />
+        <Choice value={outcome} onChange={reset(setOutcome)} options={[{ value: "all", label: t("全部状态", "All statuses") }, ...Object.entries(OUTCOME).map(([v, o]) => ({ value: v, label: o.label }))]} />
         <form
           className="relative ml-auto"
           onSubmit={(e) => {
@@ -131,20 +128,20 @@ export default function Requests() {
           }}
         >
           <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-muted" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索内容或错误" className="h-9 w-64 rounded-[10px] bg-surface pl-9" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("搜索内容或错误", "Search content or errors")} className="h-9 w-64 rounded-[10px] bg-surface pl-9" />
         </form>
       </div>
 
       <StCard className="p-2">
         {!data ? (
-          <div className="py-16 text-center text-ink-muted">{error || "加载中…"}</div>
+          <div className="py-16 text-center text-ink-muted">{error || t("加载中…", "Loading…")}</div>
         ) : data.rows.length === 0 ? (
-          <Empty icon={<ListTree />} title="没有符合条件的请求" />
+          <Empty icon={<ListTree />} title={t("没有符合条件的请求", "No matching requests")} />
         ) : (
           <StTable
             head={[
-              { label: "时间" }, { label: "密钥" }, { label: "节点" }, { label: "路由" }, { label: "内容" },
-              { label: "提示", num: true }, { label: "命中", num: true }, { label: "输出", num: true }, { label: "首字", num: true }, { label: "耗时", num: true }, { label: "状态" },
+              { label: t("时间", "Time") }, { label: t("密钥", "Key") }, { label: t("节点", "Node") }, { label: t("路由", "Route") }, { label: t("内容", "Content") },
+              { label: t("提示", "Prompt"), num: true }, { label: t("命中", "Hit"), num: true }, { label: t("输出", "Output"), num: true }, { label: t("首字", "TTFT"), num: true }, { label: t("耗时", "Duration"), num: true }, { label: t("状态", "Status") },
             ]}
           >
             {data.rows.map((r) => (
@@ -168,9 +165,9 @@ export default function Requests() {
 
       {data && data.total > PAGE && (
         <div className="mt-4 flex items-center justify-end gap-2 text-sm text-ink-muted">
-          <span className="tabular">第 {page + 1} / {pages} 页</span>
-          <Button variant="outline" size="icon-sm" disabled={page === 0} onClick={() => setPage(page - 1)} aria-label="上一页"><ChevronLeft /></Button>
-          <Button variant="outline" size="icon-sm" disabled={page + 1 >= pages} onClick={() => setPage(page + 1)} aria-label="下一页"><ChevronRight /></Button>
+          <span className="tabular">{t(`第 ${page + 1} / ${pages} 页`, `Page ${page + 1} / ${pages}`)}</span>
+          <Button variant="outline" size="icon-sm" disabled={page === 0} onClick={() => setPage(page - 1)} aria-label={t("上一页", "Previous page")}><ChevronLeft /></Button>
+          <Button variant="outline" size="icon-sm" disabled={page + 1 >= pages} onClick={() => setPage(page + 1)} aria-label={t("下一页", "Next page")}><ChevronRight /></Button>
         </div>
       )}
 

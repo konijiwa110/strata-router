@@ -20,7 +20,7 @@ export type NodeSummary = {
   last_error: string
   key_hint: string
   info: { model?: string; version?: string; context?: number; gpu?: string; cpu?: string }
-  live: { phase?: string | null; prompt_tokens?: number | null; generated?: number | null; max_tokens?: number | null; elapsed_s?: number | null; tokens_per_s?: number | null }
+  live: { phase?: string | null; prompt_tokens?: number | null; generated?: number | null; max_tokens?: number | null; elapsed_s?: number | null; tokens_per_s?: number | null; prompt_read?: number | null; prompt_total?: number | null }
   hw: { gpu_util?: number; gpu_mem_used?: number; gpu_mem_total?: number; gpu_temp?: number; gpu_power?: number; cpu?: number; ram_used?: number; ram_total?: number }
   spark: { tok_s: number[]; gpu_util: number[]; gpu_mem_used: number[] }
   today: Totals
@@ -77,7 +77,7 @@ export type Decision = { id: string; name: string; mode: NodeMode; up: boolean; 
 
 export type RequestDetail = RequestRow & { key_id: string; path: string; fixed_tokens: number; decision: Decision[] }
 
-export type ClusterEvent = { id: number; ts: number; type: string; node_id: string | null; node_name: string | null; message: string }
+export type ClusterEvent = { id: number; ts: number; type: string; node_id: string | null; node_name: string | null; message: string; message_en?: string | null }
 
 export type Overview = {
   cluster: { nodes: number; online: number; generating: number; queued: number; tok_s: number; sessions: number }

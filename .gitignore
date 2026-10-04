@@ -5,4 +5,4 @@ config.json
 config.json.tmp
 data.db*
 initial-admin-password.txt
-strata-router.service
+deploy/strata-router.service

@@ -4,16 +4,17 @@ import time
 import traceback
 from urllib.parse import urlsplit
 
-from core import MODES, STRATEGIES, Backend, check_password, hash_key, hash_password, http_json, mask, now
-from store import day_start
+from .core import MODES, STRATEGIES, Backend, check_password, hash_key, hash_password, http_json, mask, now
+from .store import day_start
 
 PUBLIC = {("POST", "login")}
 
 
 class ApiError(Exception):
     def __init__(self, code, message):
-        super().__init__(message)
-        self.code = code
+        """message 为 (中文, 英文)。"""
+        super().__init__(message[0])
+        self.code, self.message = code, message
 
 
 def need(cond, message, code=400):
@@ -21,11 +22,16 @@ def need(cond, message, code=400):
         raise ApiError(code, message)
 
 
+def pick(message, lang):
+    """(中文, 英文) 按客户端语言（请求头 X-Lang）取一个。"""
+    return message[1] if lang == "en" else message[0]
+
+
 def login(app, body):
     pw = body.get("password") or ""
     if not check_password(pw, app.cluster.cfg["admin"].get("password_hash")):
         time.sleep(1)                                  # 减缓暴力尝试
-        raise ApiError(401, "密码不正确")
+        raise ApiError(401, ("密码不正确", "Wrong password"))
     token = secrets.token_urlsafe(32)
     hours = app.cluster.cfg["system"]["session_hours"]
     app.store.add_session(hash_key(token), now() + hours * 3600)
@@ -40,16 +46,16 @@ def authorized(app, token):
 def probe(url, key, timeout=5):
     """测试连接：返回探测到的信息；失败抛 ApiError。"""
     u = urlsplit(url)
-    need(u.scheme == "http" and u.hostname, "地址需要形如 http://主机:端口")
+    need(u.scheme == "http" and u.hostname, ("地址需要形如 http://主机:端口", "URL must look like http://host:port"))
     host, port = u.hostname, u.port or 80
     try:
         st, health = http_json(host, port, "GET", "/health", None, timeout)
     except OSError as e:
-        raise ApiError(400, f"无法连接：{e}") from e
-    need(st == 200 and isinstance(health, dict) and health.get("service") == "strata", "该地址不是 Strata 服务")
+        raise ApiError(400, (f"无法连接：{e}", f"Cannot connect: {e}")) from e
+    need(st == 200 and isinstance(health, dict) and health.get("service") == "strata", ("该地址不是 Strata 服务", "Not a Strata service"))
     st, _ = http_json(host, port, "GET", "/status", key, timeout)
-    need(st != 401, "节点密钥不正确")
-    need(st == 200, f"状态接口返回 {st}")
+    need(st != 401, ("节点密钥不正确", "Invalid node key"))
+    need(st == 200, (f"状态接口返回 {st}", f"Status endpoint returned {st}"))
     st, m = http_json(host, port, "GET", "/metrics", key, timeout)
     eng, hw = (m or {}).get("engine") or {}, (m or {}).get("hardware_static") or {}
     return {"model": health.get("model"), "context": health.get("max_context"), "images": health.get("images"),
@@ -65,14 +71,14 @@ def node_fields(body, partial):
         try:
             out["weight"] = int(body["weight"])
         except (TypeError, ValueError):
-            raise ApiError(400, "权重需要是整数") from None
-        need(1 <= out["weight"] <= 100, "权重范围 1～100")
+            raise ApiError(400, ("权重需要是整数", "Weight must be an integer")) from None
+        need(1 <= out["weight"] <= 100, ("权重范围 1～100", "Weight must be 1-100"))
     if "tags" in body:
         tags = body["tags"]
-        need(isinstance(tags, list) and all(isinstance(t, str) for t in tags), "标签格式不正确")
+        need(isinstance(tags, list) and all(isinstance(t, str) for t in tags), ("标签格式不正确", "Invalid tags"))
         out["tags"] = [t.strip() for t in tags if t.strip()][:10]
     if "mode" in body:
-        need(body["mode"] in MODES, "管理状态不正确")
+        need(body["mode"] in MODES, ("管理状态不正确", "Invalid mode"))
         out["mode"] = body["mode"]
     if body.get("api_key") or not partial:
         out["api_key"] = body.get("api_key") or ""
@@ -96,15 +102,15 @@ def add_node(app, body):
     url = (body.get("url") or "").strip().rstrip("/")
     f = node_fields(body, partial=False)
     with c.lock:
-        need(not any(b.url == url for b in c.backends), "该地址已经添加过", 409)
-        need(not f.get("name") or not any(b.name == f["name"] for b in c.backends), "名称已被使用", 409)
+        need(not any(b.url == url for b in c.backends), ("该地址已经添加过", "This URL was already added"), 409)
+        need(not f.get("name") or not any(b.name == f["name"] for b in c.backends), ("名称已被使用", "Name already in use"), 409)
     info = probe(url, f["api_key"])
     b = Backend({"url": url, **f})
     with c.lock:
         c.backends.append(b)
     c.save()
     c.refresh([b], metrics=True)
-    app.event("node_added", b, f"添加节点 {url}")
+    app.event("node_added", b, (f"添加节点 {url}", f"Added node {url}"))
     return b.summary() | {"probe": info}
 
 
@@ -112,7 +118,7 @@ def patch_node(app, b, body):
     c = app.cluster
     f = node_fields(body, partial=True)
     if f.get("name"):
-        need(not any(x.name == f["name"] and x is not b for x in c.backends), "名称已被使用", 409)
+        need(not any(x.name == f["name"] and x is not b for x in c.backends), ("名称已被使用", "Name already in use"), 409)
     if "api_key" in f:
         probe(b.url, f["api_key"])
     old_mode = b.mode
@@ -122,9 +128,9 @@ def patch_node(app, b, body):
         b.update(cfg)
     c.save()
     if b.mode != old_mode:
-        app.event("node_mode", b, {"enabled": "启用", "draining": "排空", "disabled": "停用"}[b.mode])
+        app.event("node_mode", b, {"enabled": ("启用", "Enabled"), "draining": ("排空", "Draining"), "disabled": ("停用", "Disabled")}[b.mode])
     elif f:
-        app.event("node_edit", b, "修改节点设置")
+        app.event("node_edit", b, ("修改节点设置", "Node settings changed"))
     return b.summary()
 
 
@@ -133,7 +139,7 @@ def delete_node(app, b):
     with c.lock:
         c.backends = [x for x in c.backends if x is not b]
     c.save()
-    app.event("node_removed", b, f"删除节点 {b.url}")
+    app.event("node_removed", b, (f"删除节点 {b.url}", f"Removed node {b.url}"))
     return {"ok": True}
 
 
@@ -177,27 +183,28 @@ def keys_list(app):
 
 def add_key(app, body):
     name = (body.get("name") or "").strip()
-    need(name, "请填写名称")
+    need(name, ("请填写名称", "Name is required"))
     raw = (body.get("key") or "").strip() or "sk-" + secrets.token_urlsafe(24)
-    need(len(raw) >= 8, "密钥至少 8 位")
+    need(len(raw) >= 8, ("密钥至少 8 位", "Key must be at least 8 characters"))
     c = app.cluster
     with c.lock:
-        need(not any(k["hash"] == hash_key(raw) for k in c.cfg["keys"]), "该密钥已存在", 409)
+        need(not any(k["hash"] == hash_key(raw) for k in c.cfg["keys"]), ("该密钥已存在", "This key already exists"), 409)
         item = {"id": secrets.token_hex(4), "name": name, "hash": hash_key(raw), "hint": mask(raw),
                 "enabled": True, "created": now()}
         c.cfg["keys"].append(item)
     c.save()
-    app.event("key_added", None, f"新建访问密钥 {name}")
+    app.event("key_added", None, (f"新建访问密钥 {name}", f"Created access key {name}"))
     return {k: v for k, v in item.items() if k != "hash"} | {"key": raw}
 
 
 def patch_key(app, key, body):
     if "name" in body:
-        need((body["name"] or "").strip(), "名称不能为空")
+        need((body["name"] or "").strip(), ("名称不能为空", "Name cannot be empty"))
         key["name"] = body["name"].strip()
     if "enabled" in body:
         key["enabled"] = bool(body["enabled"])
-        app.event("key_toggle", None, f"{'启用' if key['enabled'] else '停用'}访问密钥 {key['name']}")
+        app.event("key_toggle", None, (f"{'启用' if key['enabled'] else '停用'}访问密钥 {key['name']}",
+                                       f"{'Enabled' if key['enabled'] else 'Disabled'} access key {key['name']}"))
     app.cluster.save()
     return {k: v for k, v in key.items() if k != "hash"}
 
@@ -207,7 +214,7 @@ def delete_key(app, key):
     with c.lock:
         c.cfg["keys"] = [k for k in c.cfg["keys"] if k is not key]
     c.save()
-    app.event("key_removed", None, f"删除访问密钥 {key['name']}")
+    app.event("key_removed", None, (f"删除访问密钥 {key['name']}", f"Removed access key {key['name']}"))
     return {"ok": True}
 
 
@@ -223,12 +230,12 @@ def put_settings(app, body):
     new = {k: dict(c.cfg[k]) for k in ("routing", "health", "system")}
     for sec in new:
         for k, v in (body.get(sec) or {}).items():
-            need(k in new[sec], f"未知设置 {sec}.{k}")
+            need(k in new[sec], (f"未知设置 {sec}.{k}", f"Unknown setting {sec}.{k}"))
             new[sec][k] = v
     r, h, s = new["routing"], new["health"], new["system"]
-    need(r["strategy"] in STRATEGIES, "分配策略不正确")
+    need(r["strategy"] in STRATEGIES, ("分配策略不正确", "Invalid strategy"))
     for k in ("sticky", "exclude_fixed", "retry"):
-        need(isinstance(r[k], bool), f"{k} 需要是开关")
+        need(isinstance(r[k], bool), (f"{k} 需要是开关", f"{k} must be a boolean"))
     try:
         r["reroute_max_tokens"] = int(r["reroute_max_tokens"])
         h["interval_s"], h["timeout_s"] = float(h["interval_s"]), float(h["timeout_s"])
@@ -236,45 +243,45 @@ def put_settings(app, body):
         s["log_retention_days"], s["session_hours"] = int(s["log_retention_days"]), int(s["session_hours"])
         port = int(body.get("port", c.cfg["port"]))
     except (TypeError, ValueError):
-        raise ApiError(400, "数值格式不正确") from None
-    need(0 <= r["reroute_max_tokens"] <= 1_000_000, "换节点阈值范围 0～1000000")
-    need(0.1 <= h["interval_s"] <= 60 and 0.5 <= h["timeout_s"] <= 30, "检查间隔 0.1～60 秒，超时 0.5～30 秒")
-    need(0.5 <= h["metrics_interval_s"] <= 300 and 1 <= h["fail_threshold"] <= 20, "指标间隔或失败次数超出范围")
-    need(1 <= s["log_retention_days"] <= 3650 and 1 <= s["session_hours"] <= 24 * 90, "保留天数或登录有效期超出范围")
-    need(1 <= port <= 65535, "端口范围 1～65535")
+        raise ApiError(400, ("数值格式不正确", "Invalid number")) from None
+    need(0 <= r["reroute_max_tokens"] <= 1_000_000, ("换节点阈值范围 0～1000000", "Move threshold must be 0-1000000"))
+    need(0.1 <= h["interval_s"] <= 60 and 0.5 <= h["timeout_s"] <= 30, ("检查间隔 0.1～60 秒，超时 0.5～30 秒", "Interval must be 0.1-60 s and timeout 0.5-30 s"))
+    need(0.5 <= h["metrics_interval_s"] <= 300 and 1 <= h["fail_threshold"] <= 20, ("指标间隔或失败次数超出范围", "Metrics interval or failure count out of range"))
+    need(1 <= s["log_retention_days"] <= 3650 and 1 <= s["session_hours"] <= 24 * 90, ("保留天数或登录有效期超出范围", "Retention days or sign-in duration out of range"))
+    need(1 <= port <= 65535, ("端口范围 1～65535", "Port must be 1-65535"))
     with c.lock:
         c.cfg.update(new)
         restart = port != c.cfg["port"]
         c.cfg["port"] = port
     c.save()
-    app.event("settings", None, "修改设置")
+    app.event("settings", None, ("修改设置", "Settings changed"))
     return settings(app) | {"restart_required": restart}
 
 
 def change_password(app, body, token):
-    need(check_password(body.get("old") or "", app.cluster.cfg["admin"].get("password_hash")), "当前密码不正确", 403)
+    need(check_password(body.get("old") or "", app.cluster.cfg["admin"].get("password_hash")), ("当前密码不正确", "Current password is wrong"), 403)
     pw = body.get("new") or ""
-    need(len(pw) >= 8, "新密码至少 8 位")
+    need(len(pw) >= 8, ("新密码至少 8 位", "New password must be at least 8 characters"))
     app.cluster.cfg["admin"]["password_hash"] = hash_password(pw)
     app.cluster.save()
     app.store.drop_all_sessions()
-    app.event("password", None, "修改管理员密码")
+    app.event("password", None, ("修改管理员密码", "Admin password changed"))
     return login(app, {"password": pw})
 
 
 # ---- 分发 ----
-def handle(app, method, path, query, body, token):
+def handle(app, method, path, query, body, token, lang=None):
     """path 为 /api/admin/ 之后的部分。返回 (状态码, 对象)。"""
     parts = [p for p in path.split("/") if p]
     try:
         if (method, "/".join(parts)) not in PUBLIC and not authorized(app, token):
-            raise ApiError(401, "请先登录")
+            raise ApiError(401, ("请先登录", "Please sign in"))
         return 200, route(app, method, parts, query, body, token)
     except ApiError as e:
-        return e.code, {"error": {"message": str(e)}}
+        return e.code, {"error": {"message": pick(e.message, lang)}}
     except Exception as e:                                       # noqa: BLE001 - 意外错误返回 500 并记录堆栈
         print(f"admin {method} {path} failed:\n{traceback.format_exc()}", flush=True)
-        return 500, {"error": {"message": f"服务内部错误：{e}"}}
+        return 500, {"error": {"message": pick((f"服务内部错误：{e}", f"Internal error: {e}"), lang)}}
 
 
 def route(app, method, parts, query, body, token):
@@ -299,7 +306,7 @@ def route(app, method, parts, query, body, token):
             return probe((body.get("url") or "").strip().rstrip("/"), body.get("api_key") or "")
         else:
             b = c.node(rest[0])
-            need(b, "没有这个节点", 404)
+            need(b, ("没有这个节点", "No such node"), 404)
             if method == "GET":
                 return node_detail(app, b)
             if method == "PATCH":
@@ -309,7 +316,7 @@ def route(app, method, parts, query, body, token):
     if head == "requests" and method == "GET":
         if rest:
             r = app.store.get_request(int(rest[0])) if rest[0].isdigit() else None
-            need(r, "没有这条请求", 404)
+            need(r, ("没有这条请求", "No such request"), 404)
             return r
         g = lambda k: (query.get(k) or [None])[0]       # noqa: E731
         hours = float(g("hours") or 24)
@@ -326,7 +333,7 @@ def route(app, method, parts, query, body, token):
                 return add_key(app, body)
         else:
             key = next((k for k in c.cfg["keys"] if k["id"] == rest[0]), None)
-            need(key, "没有这个密钥", 404)
+            need(key, ("没有这个密钥", "No such key"), 404)
             if method == "PATCH":
                 return patch_key(app, key, body)
             if method == "DELETE":
@@ -341,6 +348,6 @@ def route(app, method, parts, query, body, token):
     if head == "logs" and rest == ["cleanup"] and method == "POST":
         days = int(body.get("days") or c.cfg["system"]["log_retention_days"])
         n = app.store.cleanup(days)
-        app.event("cleanup", None, f"清理 {days} 天前的日志 {n} 条")
+        app.event("cleanup", None, (f"清理 {days} 天前的日志 {n} 条", f"Deleted {n} log records older than {days} days"))
         return {"deleted": n}
-    raise ApiError(404, "接口不存在")
+    raise ApiError(404, ("接口不存在", "Not found"))

@@ -1,6 +1,7 @@
+import { getLang, t } from "./i18n"
 import type { NodeMode, NodeState } from "./types"
 
-export const num = (n?: number | null) => (n == null ? "—" : Math.round(n).toLocaleString("zh-CN"))
+export const num = (n?: number | null) => (n == null ? "—" : Math.round(n).toLocaleString(getLang() === "en" ? "en-US" : "zh-CN"))
 
 export function tokens(n?: number | null) {
   if (n == null) return "—"
@@ -31,67 +32,89 @@ export function dateTime(ts?: number | null) {
   const d = new Date(ts * 1000)
   const today = new Date()
   const sameDay = d.toDateString() === today.toDateString()
-  return sameDay ? clock(ts) : `${d.getMonth() + 1}月${d.getDate()}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return sameDay ? clock(ts) : t(`${d.getMonth() + 1}月${d.getDate()}日 ${hm}`, `${d.getMonth() + 1}/${d.getDate()} ${hm}`)
 }
 
 export function ago(ts?: number | null) {
-  if (!ts) return "从未"
+  if (!ts) return t("从未", "never")
   const s = Date.now() / 1000 - ts
-  if (s < 5) return "刚刚"
-  if (s < 60) return `${Math.round(s)} 秒前`
-  if (s < 3600) return `${Math.round(s / 60)} 分钟前`
-  if (s < 86400) return `${Math.round(s / 3600)} 小时前`
-  return `${Math.round(s / 86400)} 天前`
+  if (s < 5) return t("刚刚", "just now")
+  if (s < 60) return t(`${Math.round(s)} 秒前`, `${Math.round(s)}s ago`)
+  if (s < 3600) return t(`${Math.round(s / 60)} 分钟前`, `${Math.round(s / 60)}m ago`)
+  if (s < 86400) return t(`${Math.round(s / 3600)} 小时前`, `${Math.round(s / 3600)}h ago`)
+  return t(`${Math.round(s / 86400)} 天前`, `${Math.round(s / 86400)}d ago`)
 }
 
+/** 文字随语言变化：用 getter 在读取时取当前语言 */
+const L = (zh: string, en: string, tone: Tone) => ({ get label() { return t(zh, en) }, tone })
+const tr = <T extends Record<string, [string, string]>>(m: T) =>
+  new Proxy(m, { get: (o, k: string) => (o[k] ? t(o[k][0], o[k][1]) : undefined) }) as unknown as Record<keyof T, string>
+
 export const STATE: Record<NodeState, { label: string; tone: Tone }> = {
-  idle: { label: "空闲", tone: "muted" },
-  reading: { label: "读取中", tone: "info" },
-  generating: { label: "生成中", tone: "brand" },
-  queued: { label: "排队", tone: "warn" },
-  offline: { label: "离线", tone: "danger" },
+  idle: L("空闲", "Idle", "muted"),
+  reading: L("读取中", "Reading", "info"),
+  generating: L("生成中", "Generating", "brand"),
+  queued: L("排队", "Queued", "warn"),
+  offline: L("离线", "Offline", "danger"),
 }
 
 export const MODE: Record<NodeMode, { label: string; tone: Tone }> = {
-  enabled: { label: "启用", tone: "brand" },
-  draining: { label: "排空中", tone: "warn" },
-  disabled: { label: "已停用", tone: "muted" },
+  enabled: L("启用", "Enabled", "brand"),
+  draining: L("排空中", "Draining", "warn"),
+  disabled: L("已停用", "Disabled", "muted"),
 }
 
 export const OUTCOME: Record<string, { label: string; tone: Tone }> = {
-  running: { label: "进行中", tone: "info" },
-  ok: { label: "成功", tone: "brand" },
-  error: { label: "失败", tone: "danger" },
-  client_closed: { label: "客户端断开", tone: "warn" },
-  no_node: { label: "无可用节点", tone: "danger" },
+  running: L("进行中", "Running", "info"),
+  ok: L("成功", "OK", "brand"),
+  error: L("失败", "Failed", "danger"),
+  client_closed: L("客户端断开", "Client closed", "warn"),
+  no_node: L("无可用节点", "No node", "danger"),
 }
 
-export const REASON: Record<string, string> = {
-  sticky: "回到原节点",
-  "sticky-wait": "等待原节点",
-  "sticky-allbusy": "原节点（均忙）",
-  moved: "换到空闲节点",
-  idle: "空闲节点",
-  allbusy: "均忙，按策略",
-  "fallback-draining": "仅剩排空节点",
-  "no-node": "无可用节点",
-}
+export const REASON: Record<string, string> = tr({
+  sticky: ["回到原节点", "Back to home node"],
+  "sticky-wait": ["等待原节点", "Waiting for home node"],
+  "sticky-allbusy": ["原节点（均忙）", "Home node (all busy)"],
+  moved: ["换到空闲节点", "Moved to idle node"],
+  idle: ["空闲节点", "Idle node"],
+  allbusy: ["均忙，按策略", "All busy, by strategy"],
+  "fallback-draining": ["仅剩排空节点", "Only draining nodes left"],
+  "no-node": ["无可用节点", "No node available"],
+})
+
+const S = (zh: [string, string], en: [string, string]) => ({
+  get label() { return t(zh[0], en[0]) },
+  get desc() { return t(zh[1], en[1]) },
+})
 
 export const STRATEGY: Record<string, { label: string; desc: string }> = {
-  even: { label: "平均分配", desc: "新会话分给累计分配次数最少的节点" },
-  least_load: { label: "按负载", desc: "新会话分给当前在途与排队最少的节点" },
-  random: { label: "随机", desc: "在候选节点中随机选择" },
-  weighted: { label: "按权重", desc: "按节点权重比例分配新会话" },
+  even: S(["平均分配", "新会话分给累计分配次数最少的节点"], ["Even", "New sessions go to the node with the fewest assignments"]),
+  least_load: S(["按负载", "新会话分给当前在途与排队最少的节点"], ["Least load", "New sessions go to the node with the fewest in-flight and queued requests"]),
+  random: S(["随机", "在候选节点中随机选择"], ["Random", "Pick a random candidate node"]),
+  weighted: S(["按权重", "按节点权重比例分配新会话"], ["Weighted", "Assign new sessions in proportion to node weights"]),
 }
 
-const PHASE: Record<string, string> = {
-  "reading the prompt": "读取提示",
-  thinking: "思考中",
-  answering: "回答中",
-  "tool call complete": "工具调用完成",
-}
+const PHASE = tr({
+  "reading the prompt": ["读取提示", "Reading prompt"],
+  thinking: ["思考中", "Thinking"],
+  answering: ["回答中", "Answering"],
+  "tool call complete": ["工具调用完成", "Tool call done"],
+})
 
 export const phase = (p?: string | null) =>
-  !p ? "—" : p.startsWith("writing a tool call") ? "调用工具" : (PHASE[p] ?? p)
+  !p ? "—" : p.startsWith("writing a tool call") ? t("调用工具", "Calling tool") : ((PHASE as Record<string, string>)[p] ?? p)
 
 export type Tone = "brand" | "info" | "warn" | "danger" | "muted"
+
+/** 事件文字：英文界面优先用后端给的英文版（旧事件没有英文时用中文） */
+export const eventText = (e: { message: string; message_en?: string | null }) =>
+  getLang() === "en" && e.message_en ? e.message_en : e.message
+
+/** 读取提示的进度（0～1）；不在读取或节点没给进度时为 null */
+export const readFrac = (state: string, live: { prompt_read?: number | null; prompt_total?: number | null }) =>
+  state === "reading" && live.prompt_total ? Math.min(1, (live.prompt_read ?? 0) / live.prompt_total) : null
+
+/** 节点连接错误：401 显示为密钥不正确，其余原样 */
+export const nodeError = (e?: string | null) => (e === "HTTP 401" ? t("节点密钥不正确", "Invalid node key") : e)
