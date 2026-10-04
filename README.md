@@ -10,6 +10,28 @@
 - **访问密钥**：多个密钥，可启停、重命名，统计今日与累计用量。
 - **控制台**（`/admin`）：总览、节点（硬件指标、当前请求进度、引擎配置）、请求记录与路由决策、密钥、设置；浅色 / 深色主题。
 
+## 截图
+
+以下截图用模拟节点和示例数据生成。
+
+总览：节点状态、集群速度、今日用量与近 1 小时输出吞吐
+
+![总览](docs/screenshots/overview.png)
+
+节点列表与节点详情（硬件指标、当前请求进度、引擎配置）
+
+![节点](docs/screenshots/nodes.png)
+
+![节点详情](docs/screenshots/node-detail.png)
+
+请求记录与路由决策
+
+![请求详情](docs/screenshots/request-detail.png)
+
+深色主题
+
+![深色主题](docs/screenshots/overview-dark.png)
+
 ## 运行
 
 后端只用 Python 标准库（3.9 及以上）。控制台需要先构建：
