@@ -84,7 +84,7 @@ export default function App() {
               {page === "nodes" && <Nodes />}
               {page === "requests" && <Requests />}
               {page === "keys" && <Keys />}
-              {page === "settings" && <Settings theme={pref} onTheme={setPref} />}
+              {page === "settings" && <Settings />}
             </motion.div>
           </AnimatePresence>
         </Layout>

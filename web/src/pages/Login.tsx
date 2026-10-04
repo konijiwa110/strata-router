@@ -20,7 +20,7 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
         className="w-full max-w-sm rounded-[24px] border border-line bg-surface p-8 shadow-bar"
       >
         <div className="mb-8 text-center">
-          <div className="text-[28px] font-black tracking-tight">Strata Cluster</div>
+          <div className="text-[28px] font-black tracking-tight">Strata Router</div>
         </div>
         <form
           className="space-y-4"

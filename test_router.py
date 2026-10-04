@@ -21,6 +21,7 @@ class FakeStrata:
 
     def __init__(self, name, delay=0.6):
         self.name, self.delay, self.lock, self.busy, self.waiting, self.served = name, delay, threading.Lock(), False, 0, []
+        self.chats = []
         fake = self
 
         class H(BaseHTTPRequestHandler):
@@ -48,11 +49,47 @@ class FakeStrata:
                                        "history": {"tok_s": [1, 2]}, "requests": []})
                 self.reply({"busy": fake.busy, "queued": fake.waiting, "phase": "answering" if fake.busy else None})
 
+            def chat(self, req):
+                """OpenAI 风格：先思考、再回答自己的名字；请求带工具时再调用一次工具。"""
+                fake.chats.append(req)
+                usage = {"prompt_tokens": 50, "completion_tokens": 7, "total_tokens": 57,
+                         "prompt_tokens_details": {"cached_tokens": 20}}
+                calls = [{"index": 0, "id": "call_1", "type": "function",
+                          "function": {"name": "get_weather", "arguments": '{"city": "SZ"}'}}] if req.get("tools") else []
+                finish = "tool_calls" if calls else "stop"
+                if not req.get("stream"):
+                    msg = {"role": "assistant", "content": fake.name, "reasoning_content": "hmm"}
+                    if calls:
+                        msg["tool_calls"] = [{k: v for k, v in c.items() if k != "index"} for c in calls]
+                    return self.reply({"id": "chatcmpl-1", "object": "chat.completion", "created": 1, "model": "m",
+                                       "choices": [{"index": 0, "message": msg, "finish_reason": finish}],
+                                       "usage": usage})
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.end_headers()
+                deltas = [{"role": "assistant", "content": ""}, {"reasoning_content": "hm"}, {"reasoning_content": "m"},
+                          {"content": fake.name}, {"content": "!"}]
+                if calls:
+                    c = calls[0]
+                    deltas += [{"tool_calls": [{**c, "function": {"name": "get_weather", "arguments": ""}}]},
+                               {"tool_calls": [{"index": 0, "function": {"arguments": '{"city": '}}]},
+                               {"tool_calls": [{"index": 0, "function": {"arguments": '"SZ"}'}}]}]
+                for i, d in enumerate(deltas):
+                    self.wfile.write(b"data: " + json.dumps({"choices": [{"index": 0, "delta": d, "finish_reason": None}]}).encode() + b"\n\n")
+                    if i == 0:                              # 空内容块之后隔一会儿才出第一个字
+                        self.wfile.flush()
+                        time.sleep(fake.delay)
+                self.wfile.write(b"data: " + json.dumps({"choices": [{"index": 0, "delta": {}, "finish_reason": finish}],
+                                                          "usage": usage}).encode() + b"\n\ndata: [DONE]\n\n")
+                self.close_connection = True
+
             def do_POST(self):
                 req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 assert self.headers["Authorization"] == f"Bearer {NODE_KEY}"
                 if req.get("fail"):
                     return self.reply({"error": {"message": "boom"}}, 400)
+                if self.path == "/v1/chat/completions":
+                    return self.chat(req)
                 fake.waiting += 1
                 with fake.lock:
                     fake.waiting -= 1
@@ -159,6 +196,14 @@ class Base(unittest.TestCase):
         self.assertEqual(code, 200)
         return {"Authorization": f"Bearer {res['token']}"}
 
+    def wait_done(self):
+        for _ in range(50):
+            rows, _ = self.store.list_requests()
+            if rows and all(r["outcome"] != "running" for r in rows):
+                return rows
+            time.sleep(0.05)
+        self.fail("request still running")
+
     def other(self, home):
         return "A" if home == "B" else "B"
 
@@ -246,14 +291,6 @@ class RoutingTest(Base):
 
 
 class LogTest(Base):
-    def wait_done(self):
-        for _ in range(50):
-            rows, _ = self.store.list_requests()
-            if rows and all(r["outcome"] != "running" for r in rows):
-                return rows
-            time.sleep(0.05)
-        self.fail("request still running")
-
     def test_stream_usage_and_ttft(self):
         self.ask("hello there")
         r = self.wait_done()[0]
@@ -261,6 +298,15 @@ class LogTest(Base):
         self.assertEqual((r["outcome"], r["status"], r["reason"], r["key_name"]), ("ok", 200, "idle", "默认"))
         self.assertEqual(r["preview"], "hello there")
         self.assertIsNotNone(r["ttft_ms"])
+
+    def test_chat_stream_ttft_skips_empty_chunk(self):
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=15)
+        c.request("POST", "/v1/chat/completions", headers={"Authorization": f"Bearer {KEY}"},
+                  body=json.dumps({"stream": True, "messages": [{"role": "user", "content": "q"}]}))
+        c.getresponse().read()
+        c.close()
+        r = self.wait_done()[0]
+        self.assertGreaterEqual(r["ttft_ms"], 500)
 
     def test_nonstream_usage(self):
         self.ask("q", stream=False)
@@ -362,3 +408,82 @@ class MigrateTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ResponsesTest(Base):
+    nodes = ("A",)
+
+    def post(self, obj):
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=15)
+        c.request("POST", "/v1/responses", body=json.dumps(obj), headers={"Authorization": f"Bearer {KEY}"})
+        r = c.getresponse()
+        data = r.read().decode()
+        c.close()
+        return r.status, data
+
+    def events(self, text):
+        return [json.loads(b.split("data: ", 1)[1]) for b in text.split("\n\n") if "data: " in b]
+
+    def test_request_converted(self):
+        tools = [{"type": "function", "name": "get_weather", "parameters": {"type": "object"}}, {"type": "web_search"}]
+        self.post({"model": "m", "instructions": "be brief", "max_output_tokens": 99, "reasoning": {"effort": "xhigh"},
+                   "tools": tools, "tool_choice": {"type": "function", "name": "get_weather"},
+                   "text": {"format": {"type": "json_schema", "name": "x", "schema": {"type": "object"}}},
+                   "input": [{"role": "developer", "content": "dev"},
+                             {"role": "user", "content": [{"type": "input_text", "text": "hi"}]},
+                             {"role": "assistant", "content": [{"type": "output_text", "text": "let me check"}]},
+                             {"type": "function_call", "call_id": "c1", "name": "get_weather", "arguments": "{}"},
+                             {"type": "reasoning", "summary": []},
+                             {"type": "function_call_output", "call_id": "c1", "output": "sunny"}]})
+        req = self.fakes["A"].chats[0]
+        self.assertEqual(req["messages"], [
+            {"role": "system", "content": "be brief"}, {"role": "system", "content": "dev"},
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "let me check", "tool_calls": [
+                {"id": "c1", "type": "function", "function": {"name": "get_weather", "arguments": "{}"}}]},
+            {"role": "tool", "tool_call_id": "c1", "content": "sunny"}])
+        self.assertEqual((req["max_tokens"], req["reasoning_effort"], req["stream"]), (99, "high", False))
+        self.assertEqual(req["tools"], [{"type": "function", "function": {"name": "get_weather", "parameters": {"type": "object"}}}])
+        self.assertEqual(req["tool_choice"], {"type": "function", "function": {"name": "get_weather"}})
+        self.assertEqual(req["response_format"]["json_schema"]["name"], "x")
+
+    def test_nonstream(self):
+        code, data = self.post({"model": "m", "input": "hi", "tools": [{"type": "function", "name": "get_weather"}]})
+        self.assertEqual(code, 200)
+        r = json.loads(data)
+        self.assertEqual((r["object"], r["status"]), ("response", "completed"))
+        self.assertEqual([o["type"] for o in r["output"]], ["reasoning", "message", "function_call"])
+        self.assertEqual(r["output"][1]["content"][0]["text"], "A")
+        self.assertEqual((r["output"][2]["call_id"], r["output"][2]["arguments"]), ("call_1", '{"city": "SZ"}'))
+        self.assertEqual((r["usage"]["input_tokens"], r["usage"]["output_tokens"],
+                          r["usage"]["input_tokens_details"]["cached_tokens"]), (50, 7, 20))
+        rec = self.wait_done()[0]
+        self.assertEqual((rec["api"], rec["prompt_tokens"], rec["output_tokens"], rec["preview"]),
+                         ("responses", 50, 7, "hi"))
+
+    def test_stream(self):
+        code, data = self.post({"model": "m", "input": "hi", "stream": True,
+                                "tools": [{"type": "function", "name": "get_weather"}]})
+        self.assertEqual(code, 200)
+        evs = self.events(data)
+        self.assertEqual([e["sequence_number"] for e in evs], list(range(len(evs))))
+        types = [e["type"] for e in evs]
+        self.assertEqual(types[:2], ["response.created", "response.in_progress"])
+        self.assertEqual(types[-1], "response.completed")
+        self.assertEqual("".join(e["delta"] for e in evs if e["type"] == "response.output_text.delta"), "A!")
+        self.assertEqual("".join(e["delta"] for e in evs if e["type"] == "response.reasoning_summary_text.delta"), "hmm")
+        self.assertEqual("".join(e["delta"] for e in evs if e["type"] == "response.function_call_arguments.delta"),
+                         '{"city": "SZ"}')
+        self.assertEqual(types.count("response.output_item.added"), 3)
+        self.assertEqual(types.count("response.output_item.done"), 3)
+        done = evs[-1]["response"]
+        self.assertEqual([o["type"] for o in done["output"]], ["reasoning", "message", "function_call"])
+        self.assertEqual(done["output"][1]["content"][0]["text"], "A!")
+        self.assertEqual(done["usage"]["output_tokens"], 7)
+        rec = self.wait_done()[0]
+        self.assertEqual((rec["outcome"], rec["prompt_tokens"], rec["cached_tokens"]), ("ok", 50, 20))
+        self.assertIsNotNone(rec["ttft_ms"])
+
+    def test_previous_response_id_rejected(self):
+        code, _ = self.post({"model": "m", "input": "hi", "previous_response_id": "resp_x"})
+        self.assertEqual(code, 400)

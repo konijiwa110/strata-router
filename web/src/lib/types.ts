@@ -54,7 +54,7 @@ export type RequestRow = {
   id: number
   ts: number
   key_name: string
-  api: "openai" | "anthropic"
+  api: "openai" | "anthropic" | "responses"
   model: string | null
   stream: number
   session: string

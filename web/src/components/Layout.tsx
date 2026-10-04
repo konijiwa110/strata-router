@@ -35,7 +35,7 @@ export function Layout({ page, onPage, status, theme, onTheme, onLogout, childre
         <div className="mx-auto flex h-[60px] max-w-[1280px] items-center gap-4 px-6">
           <div className="flex items-center gap-2 text-lg font-black tracking-tight whitespace-nowrap">
             <Activity className="size-5 text-brand" />
-            Strata Cluster
+            Strata Router
           </div>
           <nav className="ml-2 hidden md:block">
             <Segmented options={PAGES} value={page} onChange={onPage} />

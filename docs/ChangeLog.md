@@ -1,5 +1,21 @@
 # ChangeLog
 
+## 2026-10-04 设置页布局
+
+- 去掉设置页的“外观”卡片（顶栏已有主题切换）。
+- 设置页由瀑布流改为左右两列（左：路由、健康检查；右：日志与登录、服务、管理员密码），每列最后一张卡片撑满，两列底部对齐，保存按钮贴底。
+
+## 2026-10-04 修复 Chat 流式首字延迟
+
+- `/v1/chat/completions` 流式请求的首字延迟原来几乎都记为 0：节点第一块是空内容 `"content": ""`，被当成了首字。改为要求内容非空才算；新增对应测试，共 27 个通过。
+
+## 2026-10-04 支持 Responses 接口，改名 Strata Router
+
+- 新增 `/v1/responses`（OpenAI Responses 协议）：新模块 responses.py 把请求转成 Chat Completions 发给节点，再把结果与流式分块转回 Responses 格式（参考 new-api apicompat 的反向实现），支持思考摘要、工具调用、结构化输出、用量与缓存命中。不支持 `previous_response_id`。
+- 请求日志记录协议为 responses，控制台请求详情显示“Responses”；Responses 流式的首字延迟按第一个实际增量计算。
+- 控制台品牌、页面标题与文档中的 “Strata Cluster” 改为 “Strata Router”，启动日志同步改名。
+- 新增 4 个测试（请求转换、非流式、流式事件序列、拒绝 previous_response_id），共 26 个全部通过；用 openai SDK 经临时入口对 win3080 实测非流式、流式、工具调用与回传工具结果均正常。
+
 ## 2026-10-04 README 加截图
 
 - 新增 `docs/screenshots/` 下 5 张控制台截图（总览、节点、节点详情、请求详情、深色主题），README 新增“截图”一节。截图用模拟节点和示例数据生成，不含真实地址与请求内容。

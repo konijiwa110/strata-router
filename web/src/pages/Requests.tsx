@@ -34,7 +34,7 @@ function Detail({ id, onClose }: { id: number | null; onClose: () => void }) {
             请求 #{id}
             {r && <OutcomePill outcome={r.outcome} />}
           </SheetTitle>
-          {r && <div className="text-xs text-ink-muted">{dateTime(r.ts)} · {r.api === "anthropic" ? "Anthropic" : "OpenAI"} · {r.stream ? "流式" : "非流式"}</div>}
+          {r && <div className="text-xs text-ink-muted">{dateTime(r.ts)} · {{ openai: "OpenAI", anthropic: "Anthropic", responses: "Responses" }[r.api]} · {r.stream ? "流式" : "非流式"}</div>}
         </SheetHeader>
         {r && (
           <div className="space-y-5 p-6">
