@@ -17,6 +17,9 @@ export function ms(v?: number | null) {
   return v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)} s` : `${Math.round(v)} ms`
 }
 
+/** User-Agent 的第一段产品名，如 "claude-cli/2.1.3 (external, cli)" -> "claude-cli 2.1.3" */
+export const clientName = (ua?: string | null) => (ua ? ua.split(" ")[0].replace("/", " ") : "—")
+
 export const pct = (v?: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`)
 
 const pad = (n: number) => String(n).padStart(2, "0")

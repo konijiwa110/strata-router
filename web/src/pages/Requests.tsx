@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { usePoll } from "@/hooks/usePoll"
 import { api } from "@/lib/api"
-import { OUTCOME, REASON, dateTime, ms, num, pct, tokens } from "@/lib/format"
+import { OUTCOME, REASON, clientName, dateTime, ms, num, pct, tokens } from "@/lib/format"
 import { t } from "@/lib/i18n"
 import type { AccessKey, NodeSummary, RequestDetail, RequestRow } from "@/lib/types"
 
@@ -50,6 +50,7 @@ function Detail({ id, onClose }: { id: number | null; onClose: () => void }) {
                 <KV label={t("节点", "Node")} value={r.node_name ?? "—"} />
                 <KV label={t("路由", "Route")} value={REASON[r.reason ?? ""] ?? r.reason ?? "—"} />
                 <KV label={t("密钥", "Key")} value={r.key_name} />
+                <KV label={t("客户端", "Client")} value={r.client || "—"} mono />
                 <KV label={t("模型", "Model")} value={r.model ?? "—"} />
                 <KV label={t("提示", "Prompt")} value={num(r.prompt_tokens)} />
                 <KV label={t("缓存命中", "Cache hit")} value={r.prompt_tokens ? t(`${num(r.cached_tokens)}（${pct((r.cached_tokens ?? 0) / r.prompt_tokens)}）`, `${num(r.cached_tokens)} (${pct((r.cached_tokens ?? 0) / r.prompt_tokens)})`) : "—"} />
@@ -140,7 +141,7 @@ export default function Requests() {
         ) : (
           <StTable
             head={[
-              { label: t("时间", "Time") }, { label: t("密钥", "Key") }, { label: t("节点", "Node") }, { label: t("路由", "Route") }, { label: t("内容", "Content") },
+              { label: t("时间", "Time") }, { label: t("密钥", "Key") }, { label: t("节点", "Node") }, { label: t("路由", "Route") }, { label: t("客户端", "Client") }, { label: t("内容", "Content") },
               { label: t("提示", "Prompt"), num: true }, { label: t("命中", "Hit"), num: true }, { label: t("输出", "Output"), num: true }, { label: t("首字", "TTFT"), num: true }, { label: t("耗时", "Duration"), num: true }, { label: t("状态", "Status") },
             ]}
           >
@@ -150,6 +151,7 @@ export default function Requests() {
                 <td className="whitespace-nowrap">{r.key_name}</td>
                 <td className="whitespace-nowrap font-medium text-ink">{r.node_name ?? "—"}</td>
                 <td className="whitespace-nowrap">{REASON[r.reason ?? ""] ?? r.reason ?? "—"}</td>
+                <td className="whitespace-nowrap text-ink-muted" title={r.client ?? undefined}>{clientName(r.client)}</td>
                 <td className="max-w-[280px] truncate text-ink-muted">{r.error && r.outcome !== "ok" ? <span className="text-danger-text">{r.error}</span> : r.preview || "—"}</td>
                 <td className="text-right">{tokens(r.prompt_tokens)}</td>
                 <td className="text-right">{r.prompt_tokens ? pct((r.cached_tokens ?? 0) / r.prompt_tokens) : "—"}</td>

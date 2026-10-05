@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { usePoll } from "@/hooks/usePoll"
 import { api } from "@/lib/api"
-import { MODE, OUTCOME, REASON, ago, clock, gb, ms, nodeError, num, pct, phase, readFrac, tokens } from "@/lib/format"
+import { MODE, OUTCOME, REASON, ago, clientName, clock, gb, ms, nodeError, num, pct, phase, readFrac, tokens } from "@/lib/format"
 import { t } from "@/lib/i18n"
 import type { NodeDetail } from "@/lib/types"
 
@@ -105,12 +105,13 @@ function Body({ id }: { id: string }) {
 
       <StCard>
         <CardTitle actions={<span className="text-[13px] text-ink-muted">{t("经入口分配", "Assigned by the router")}</span>}>{t("路由记录", "Routing history")}</CardTitle>
-        <StTable head={[{ label: t("时间", "Time") }, { label: t("密钥", "Key") }, { label: t("路由", "Route") }, { label: t("内容", "Content") }, { label: t("输出", "Output"), num: true }, { label: t("耗时", "Duration"), num: true }, { label: t("状态", "Status") }]}>
+        <StTable head={[{ label: t("时间", "Time") }, { label: t("密钥", "Key") }, { label: t("路由", "Route") }, { label: t("客户端", "Client") }, { label: t("内容", "Content") }, { label: t("输出", "Output"), num: true }, { label: t("耗时", "Duration"), num: true }, { label: t("状态", "Status") }]}>
           {n.recent.map((r) => (
             <tr key={r.id}>
               <td className="whitespace-nowrap">{clock(r.ts)}</td>
               <td className="whitespace-nowrap">{r.key_name}</td>
               <td className="whitespace-nowrap">{REASON[r.reason ?? ""] ?? r.reason}</td>
+              <td className="whitespace-nowrap text-ink-muted" title={r.client ?? undefined}>{clientName(r.client)}</td>
               <td className="max-w-[240px] truncate text-ink-muted">{r.preview || "—"}</td>
               <td className="text-right">{num(r.output_tokens)}</td>
               <td className="text-right">{ms(r.duration_ms)}</td>

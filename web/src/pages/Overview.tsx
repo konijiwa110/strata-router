@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { usePoll } from "@/hooks/usePoll"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
-import { MODE, OUTCOME, REASON, clock, eventText, gb, ms, nodeError, num, pct, phase, readFrac, tokens } from "@/lib/format"
+import { MODE, OUTCOME, REASON, clientName, clock, eventText, gb, ms, nodeError, num, pct, phase, readFrac, tokens } from "@/lib/format"
 import { t } from "@/lib/i18n"
 import type { NodeSummary, Overview as OverviewData } from "@/lib/types"
 
@@ -198,12 +198,13 @@ export default function Overview({ onGo }: { onGo: (page: "nodes" | "requests") 
       <StCard>
         <CardTitle actions={<Button variant="ghost" size="sm" onClick={() => onGo("requests")}>{t("全部请求", "All requests")}<ArrowRight /></Button>}>{t("最近请求", "Recent requests")}</CardTitle>
         {data.recent.length ? (
-          <StTable head={[{ label: t("时间", "Time") }, { label: t("节点", "Node") }, { label: t("路由", "Route") }, { label: t("内容", "Content") }, { label: t("输出", "Output"), num: true }, { label: t("耗时", "Duration"), num: true }, { label: t("状态", "Status") }]}>
+          <StTable head={[{ label: t("时间", "Time") }, { label: t("节点", "Node") }, { label: t("路由", "Route") }, { label: t("客户端", "Client") }, { label: t("内容", "Content") }, { label: t("输出", "Output"), num: true }, { label: t("耗时", "Duration"), num: true }, { label: t("状态", "Status") }]}>
             {data.recent.map((r) => (
               <tr key={r.id}>
                 <td className="whitespace-nowrap">{clock(r.ts)}</td>
                 <td className="whitespace-nowrap font-medium text-ink">{r.node_name ?? "—"}</td>
                 <td className="whitespace-nowrap">{REASON[r.reason ?? ""] ?? r.reason ?? "—"}</td>
+                <td className="whitespace-nowrap text-ink-muted" title={r.client ?? undefined}>{clientName(r.client)}</td>
                 <td className="max-w-[360px] truncate text-ink-muted">{r.preview || "—"}</td>
                 <td className="text-right">{num(r.output_tokens)}</td>
                 <td className="text-right">{ms(r.duration_ms)}</td>

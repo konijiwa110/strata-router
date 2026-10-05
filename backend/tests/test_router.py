@@ -2,6 +2,7 @@
 import http.client
 import json
 import os
+import select
 import socket
 import tempfile
 import threading
@@ -21,7 +22,7 @@ class FakeStrata:
 
     def __init__(self, name, delay=0.6):
         self.name, self.delay, self.lock, self.busy, self.waiting, self.served = name, delay, threading.Lock(), False, 0, []
-        self.chats, self.resps = [], []
+        self.chats, self.resps, self.cancelled = [], [], 0
         fake = self
 
         class H(BaseHTTPRequestHandler):
@@ -121,7 +122,13 @@ class FakeStrata:
                     fake.busy = True
                     fake.served.append(req["messages"][0]["content"])
                     if not req.get("stream"):
-                        time.sleep(fake.delay)
+                        end = time.time() + (req.get("slow") or fake.delay)
+                        while time.time() < end:            # slow：像 Strata 一样边等边查对方是否已断开
+                            r, _, _ = select.select([self.connection], [], [], 0.05)
+                            if req.get("slow") and r and self.connection.recv(1, socket.MSG_PEEK) == b"":
+                                fake.cancelled += 1
+                                fake.busy = False
+                                return
                         fake.busy = False
                         return self.reply({"content": [{"type": "text", "text": f"data: {fake.name}"}],
                                            "usage": {"input_tokens": 30, "cache_read_input_tokens": 70,
@@ -344,6 +351,33 @@ class LogTest(Base):
         r = self.wait_done()[0]
         self.assertEqual((r["outcome"], r["status"], r["error"]), ("error", 400, "boom"))
 
+    def test_client_recorded(self):
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=15)
+        c.request("POST", "/v1/messages", headers={"x-api-key": KEY, "User-Agent": "claude-cli/9.9.9 (external, cli)"},
+                  body=json.dumps({"stream": True, "messages": [{"role": "user", "content": "q"}]}))
+        c.getresponse().read()
+        c.close()
+        self.assertEqual(self.wait_done()[0]["client"], "claude-cli/9.9.9 (external, cli)")
+
+    def test_nonstream_client_hangup_cancels_node(self):
+        """非流式请求生成期间客户端断开：节点那边的生成被取消，记为客户端断开，节点不算离线。"""
+        body = json.dumps({"system": "s", "stream": False, "slow": 10,
+                           "messages": [{"role": "user", "content": "q"}]}).encode()
+        s = socket.create_connection(("127.0.0.1", self.port))
+        s.sendall(b"POST /v1/messages HTTP/1.1\r\nHost: x\r\nx-api-key: " + KEY.encode() +
+                  b"\r\nContent-Type: application/json\r\nContent-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body)
+        time.sleep(0.5)
+        s.close()
+        t0 = time.time()
+        while time.time() - t0 < 5 and sum(f.cancelled for f in self.fakes.values()) == 0:
+            time.sleep(0.05)
+        self.assertEqual(sum(f.cancelled for f in self.fakes.values()), 1)
+        self.assertLess(time.time() - t0, 3)
+        r = self.wait_done()[0]
+        self.assertEqual((r["outcome"], r["status"]), ("client_closed", 499))
+        self.assertTrue(all(b.up for b in self.cluster.backends))
+        self.assertFalse([e for e in self.store.events() if e["type"] == "node_down"])
+
     def test_request_api_filters_and_detail(self):
         h = self.login()
         self.ask("a1")
@@ -492,6 +526,20 @@ class I18nTest(Base):
         self.http("POST", "/api/admin/keys", {"name": "ci"}, h)
         e = self.store.events()[0]
         self.assertEqual((e["type"], e["message"], e["message_en"]), ("key_added", "新建访问密钥 ci", "Created access key ci"))
+
+    def test_old_requests_table_gets_client_column(self):
+        import sqlite3
+        p = os.path.join(self.dir, "old-req.db")
+        db = sqlite3.connect(p)
+        db.execute("CREATE TABLE requests(id INTEGER PRIMARY KEY, ts REAL, key_id TEXT, key_name TEXT, api TEXT, path TEXT,"
+                   " model TEXT, stream INT, session TEXT, node_id TEXT, node_name TEXT, reason TEXT, est_tokens INT,"
+                   " fixed_tokens INT, prompt_tokens INT, cached_tokens INT, output_tokens INT, ttft_ms INT,"
+                   " duration_ms INT, status INT, outcome TEXT, error TEXT, decision TEXT, preview TEXT)")
+        db.execute("INSERT INTO requests(ts, outcome, preview) VALUES(1, 'ok', 'old')")
+        db.commit()
+        db.close()
+        rows, _ = Store(p).list_requests()
+        self.assertEqual((rows[0]["preview"], rows[0]["client"]), ("old", None))
 
     def test_old_events_table_gets_column(self):
         import sqlite3

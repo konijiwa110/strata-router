@@ -5,6 +5,8 @@ import re
 import mimetypes
 import os
 import secrets
+import select
+import socket
 import sys
 import threading
 import time
@@ -217,7 +219,8 @@ class Handler(BaseHTTPRequestHandler):
         est = len(body) // 3                                       # 粗估 token 数（JSON 字节数 / 3）
         rec = {"ts": now(), "key_id": key["id"], "key_name": key["name"], "api": GEN_PATHS[path], "path": path,
                "model": req.get("model"), "stream": int(bool(req.get("stream"))), "session": (sess or "")[:12],
-               "est_tokens": est, "fixed_tokens": fixed_est, "outcome": "running", "preview": preview(view)}
+               "est_tokens": est, "fixed_tokens": fixed_est, "outcome": "running", "preview": preview(view),
+               "client": (self.headers.get("User-Agent") or "")[:200]}
         rid = app.store.add_request(rec)
         c.refresh_for_request()
         tried, t0 = [], time.time()
@@ -257,11 +260,18 @@ class Handler(BaseHTTPRequestHandler):
         if body or self.command in ("POST", "PUT", "PATCH"):
             headers["Content-Length"] = str(len(body))
         conn = b.connect(timeout=None)
+        done, gone = threading.Event(), threading.Event()
+        if t0 is not None:
+            threading.Thread(target=self.watch_client, args=(conn, done, gone), daemon=True).start()
         try:
             try:
                 conn.request(self.command, self.path, body=body or None, headers=headers)
                 resp = conn.getresponse()
             except OSError as e:
+                if gone.is_set():                                    # 是客户端先走了，节点没问题
+                    self.close_connection = True
+                    out["outcome"] = "client_closed"
+                    return 499
                 raise ConnectionError(str(e)) from e
             self.send_response(resp.status)
             for k, v in resp.getheaders():
@@ -301,6 +311,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.close_connection = True
                 out["outcome"] = "client_closed"
                 return resp.status
+            if gone.is_set():                                        # 监视线程已断开节点，读到的结尾不完整
+                self.close_connection = True
+                out["outcome"] = "client_closed"
+                return resp.status
             if keep:
                 try:
                     obj = json.loads(b"".join(keep))
@@ -312,7 +326,29 @@ class Handler(BaseHTTPRequestHandler):
                         out["error"] = b"".join(keep)[:500].decode("utf-8", "replace")
             return resp.status
         finally:
+            done.set()
             conn.close()
+
+    def watch_client(self, conn, done, gone):
+        """转发期间每秒看一次客户端：连接可读却读到 0 字节说明对方已关闭，此时断开到节点的连接，Strata 会随之停止生成。
+        非流式请求在节点生成完之前不写任何东西，不这样查的话客户端超时重发的请求会一直占着节点。"""
+        sock = self.connection
+        while not done.wait(1):
+            try:
+                readable, _, _ = select.select([sock], [], [], 0)
+                closed = bool(readable) and sock.recv(1, socket.MSG_PEEK) == b""
+            except (ConnectionError, TimeoutError):
+                closed = True
+            except (OSError, ValueError):                            # 本端已关闭，请求已结束
+                return
+            if closed:
+                gone.set()
+            if gone.is_set() and conn.sock is not None:
+                try:
+                    conn.sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                return
 
     def static(self, path):
         """控制台静态文件（web/dist）；/admin 重定向到 /admin/，未知路径回落到 index.html。"""

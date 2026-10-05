@@ -71,6 +71,7 @@ export type RequestRow = {
   outcome: string
   error: string | null
   preview: string
+  client: string | null
 }
 
 export type Decision = { id: string; name: string; mode: NodeMode; up: boolean; busy: boolean; queued: number; inflight: number; cost: number; home: boolean }

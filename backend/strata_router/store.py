@@ -7,14 +7,14 @@ import time
 
 REQ_FIELDS = ("ts", "key_id", "key_name", "api", "path", "model", "stream", "session", "node_id", "node_name", "reason",
               "est_tokens", "fixed_tokens", "prompt_tokens", "cached_tokens", "output_tokens", "ttft_ms",
-              "duration_ms", "status", "outcome", "error", "decision", "preview")
+              "duration_ms", "status", "outcome", "error", "decision", "preview", "client")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS requests(
   id INTEGER PRIMARY KEY, ts REAL, key_id TEXT, key_name TEXT, api TEXT, path TEXT, model TEXT, stream INT,
   session TEXT, node_id TEXT, node_name TEXT, reason TEXT, est_tokens INT, fixed_tokens INT, prompt_tokens INT,
   cached_tokens INT, output_tokens INT, ttft_ms INT, duration_ms INT, status INT, outcome TEXT, error TEXT,
-  decision TEXT, preview TEXT);
+  decision TEXT, preview TEXT, client TEXT);
 CREATE INDEX IF NOT EXISTS req_ts ON requests(ts);
 CREATE INDEX IF NOT EXISTS req_node ON requests(node_id, ts);
 CREATE INDEX IF NOT EXISTS req_key ON requests(key_id, ts);
@@ -67,6 +67,8 @@ class Store:
             self.db.executescript(SCHEMA)
             if "message_en" not in [r[1] for r in self.db.execute("PRAGMA table_info(events)")]:   # 旧库补列
                 self.db.execute("ALTER TABLE events ADD COLUMN message_en TEXT")
+            if "client" not in [r[1] for r in self.db.execute("PRAGMA table_info(requests)")]:
+                self.db.execute("ALTER TABLE requests ADD COLUMN client TEXT")
             rows = self.db.execute("SELECT id, message FROM events WHERE message_en IS NULL").fetchall()
             fill = [(event_en(msg), rid) for rid, msg in rows if event_en(msg)]
             if fill:                                         # 一个事务里写完，避免逐条提交拖慢启动
@@ -114,7 +116,7 @@ class Store:
         w = ("WHERE " + " AND ".join(where)) if where else ""
         total = self.q(f"SELECT COUNT(*) n FROM requests {w}", args)[0]["n"]
         rows = self.q(f"SELECT id,ts,key_name,api,model,stream,session,node_id,node_name,reason,est_tokens,"
-                      f"prompt_tokens,cached_tokens,output_tokens,ttft_ms,duration_ms,status,outcome,error,preview "
+                      f"prompt_tokens,cached_tokens,output_tokens,ttft_ms,duration_ms,status,outcome,error,preview,client "
                       f"FROM requests {w} ORDER BY id DESC LIMIT ? OFFSET ?", args + [limit, offset])
         return rows, total
 
